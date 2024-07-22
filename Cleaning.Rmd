@@ -1,0 +1,101 @@
+---
+title: "Cleaning"
+author: "Marziyeh Aghaei"
+date: "2024-07-22"
+output:
+  html_document: 
+    code_folding: show
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r,message = FALSE}
+# packages
+require(tidyverse)
+require(fixest)
+require(stargazer)
+require(haven)
+library(Synth)
+library(usethis)
+library(synthdid)
+library(dplyr)
+library(foreign)
+library(gridExtra)
+library(ggplot2)
+library(openxlsx)
+library(RODBC)
+
+# clear
+rm(list = ls())
+
+# set directories
+directory_specific <-"C:/Research/LFP"
+directory_data <- file.path(directory_specific,"/LFS Data")
+
+```
+```{r}
+# Load Data
+setwd(directory_data)
+
+# Create a vector of file names
+files <- paste0("LFS_", 84:99, ".dta")
+
+# Loop through each file, read the data, and assign to a variable
+for (i in 84:99) {
+    file <- paste0("LFS_", i, ".dta")
+    data <- read_dta(file)
+    data <- data[, order(names(data))]
+    assign(paste0("df_", i), data)
+}
+
+```
+```{r}
+df_names <- paste0("df_", 87:95)
+
+# Initialize the final data frame with the first data frame
+df_87_95 <- get(df_names[1])
+
+# Loop through the remaining data frames and merge them
+for (df_name in df_names[-1]) {
+  next_df <- get(df_name)
+  df_87_95<- bind_rows(df_87_95, next_df)
+}
+
+df_87_95 <- subset(df_87_95, select = -IW15_Yearly)
+names(df_87_95)[names(df_87_95) == "IW10_Yearly"] <- "IW_Yearly"
+
+df_names <- paste0("df_", 96:99)
+
+# Initialize the final data frame with the first data frame
+df_87_99 <- df_87_95
+
+# Loop through the remaining data frames and merge them
+for (df_name in df_names[-1]) {
+  next_df <- get(df_name)
+  df_87_99 <- bind_rows(df_87_99, next_df)
+}
+
+```
+```{r}
+# Initialize the final data frame with the first data frame
+df_names <- paste0("df_", 84:86)
+
+# Initialize the final data frame with the first data frame
+df_84_86 <- get(df_names[1])
+
+# Loop through the remaining data frames and merge them
+for (df_name in df_names[-1]) {
+  next_df <- get(df_name)
+  df_84_86 <- bind_rows(df_84_86, next_df)
+}
+```
+
+
+
+
