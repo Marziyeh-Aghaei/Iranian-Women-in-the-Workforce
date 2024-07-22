@@ -22,9 +22,7 @@ require(tidyverse)
 require(fixest)
 require(stargazer)
 require(haven)
-library(Synth)
 library(usethis)
-library(synthdid)
 library(dplyr)
 library(foreign)
 library(gridExtra)
@@ -36,26 +34,44 @@ library(RODBC)
 rm(list = ls())
 
 # set directories
-directory_specific <-"C:/Research/LFP"
-directory_data <- file.path(directory_specific,"/LFS Data")
+# directory_specific <-"C:/Research/LFP"
 
-a<- 200
+# set general data directory
+directory_data <- "C:/Users/rbm7796/Dropbox/Iranian-Women-in-the-Workforce/Data"
+# set specific data directories
+directory_data_LFS <- file.path(directory_data,"/LFS")
 ```
 ```{r}
 # Load Data
-setwd(directory_data)
+setwd(directory_data_LFS)
 
 # Create a vector of file names
 files <- paste0("LFS_", 84:99, ".dta")
+
+# create empty dataframes
+df_84_86 <- data.frame()
+df_87_95<- data.frame()
+df_96_95<- data.frame()
 
 # Loop through each file, read the data, and assign to a variable
 for (i in 84:99) {
     file <- paste0("LFS_", i, ".dta")
     data <- read_dta(file)
     data <- data[, order(names(data))]
-    assign(paste0("df_", i), data)
+    
+    # if i<87 merge data with df_84_86, else if i>87 and i<96 merge data with df_87_95, else merge data with df_96_99
+    if (i < 87) {
+      bind_rows(df_87_95, next_df)
+    } else if (i < 96) {
+      data <- subset(data, select = -IW15_Yearly)
+      names(data)[names(data) == "IW10_Yearly"] <- "IW_Yearly"
+      assign(paste0("df_", i), data)
+    } else {
+    assign(paste0("df_", i), data)}
 }
 
+# remove variable data
+rm(data)
 ```
 ```{r}
 df_names <- paste0("df_", 87:95)
