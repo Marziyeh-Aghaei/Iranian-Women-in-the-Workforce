@@ -39,6 +39,10 @@ rm(list = ls())
 directory_specific <-"C:/Research/LFP"
 directory_data <- file.path(directory_specific,"/LFS Data")
 
+# write a loop that prints 1 to 100
+for (i in 1:100) {
+  print(i)
+}
 ```
 ```{r}
 # Load Data
