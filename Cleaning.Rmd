@@ -29,6 +29,7 @@ library(gridExtra)
 library(ggplot2)
 library(openxlsx)
 library(RODBC)
+library(openxlsx)
 
 # clear
 rm(list = ls())
@@ -37,7 +38,7 @@ rm(list = ls())
 # directory_specific <-"C:/Research/LFP"
 
 # set general data directory
-directory_data <- "C:/Users/rbm7796/Dropbox/Iranian-Women-in-the-Workforce/Data"
+directory_data <- "C:/Users/rbm7796/Dropbox/Iranian-Women-in-the-Workforce/Data/"
 # set specific data directories
 directory_data_LFS <- file.path(directory_data,"/LFS")
 ```
@@ -55,7 +56,7 @@ for (i in 84:99) {
     data <- read_dta(file)
     data <- data[, order(names(data))]
     
-    # if i<87 merge data with df_84_86, else if i>87 and i<96 merge data with df_87_95, else merge data with df_96_99
+    # if i<87 merge data with df_84_86, else if i>87 merge data with df_87_99
     if (i < 87) {
       df_84_86 <- bind_rows(df_84_86, data)
     } else {
@@ -70,5 +71,50 @@ for (i in 84:99) {
 # remove variable data
 rm(data)
 ```
+```{r}
+#separate pkey column into 4 columns, first two digits are year, next two digits are province_code, next digit is if it is city/village, next three digit is the sample_number and the two last gigits are the family_number
+df_87_99_subset <- df_87_99 %>%
+  separate(pkey, into = c("year", "province_code", "city_village", "sample_number", "family_number"),
+           sep = c(2, 4, 5, 8))
+
+df_84_86_subset <- df_84_86 %>%
+  separate(pkey, into = c("year", "province_code", "city_village", "sample_number", "family_number"),
+           sep = c(2, 4, 5, 8))
+```
+
+```{r}
+# rename colunm F2_D04 to gender
+colnames(df_87_99_subset)[colnames(df_87_99_subset) == "F2_D04"] <- "gender"
+colnames(df_87_99_subset)[colnames(df_87_99_subset) == "F2_D07"] <- "age"
+colnames(df_87_99_subset)[colnames(df_87_99_subset) == "F2_D08"] <- "citizenship"
+# keep only rows with value 2 in column gender
+df_87_99_subset <- df_87_99_subset %>%
+  filter(citizenship==1) %>% filter(age > 16 & age < 64)
+
+# if at least one of F3_D01 to F3_D06 is 1, then employed=1, else employed=0
+df_87_99_subset <- df_87_99_subset %>%
+  mutate(employed = if_else(F3_D01 == 1 | F3_D02 == 1 | F3_D03 == 1 | F3_D04 == 1 | F3_D05 == 1 | F3_D06 == 1, 1, 0))
+
+df_99_subset <- df_87_99_subset %>%
+  filter(year==99) 
+
+# by province_code and gender, take average on employed
+df_99_subset_avg <- df_99_subset %>%
+  group_by(province_code, gender) %>%
+  summarize(avg_employed = mean(employed))
+
+df_99_subset_avg_wide <- df_99_subset_avg %>%
+  pivot_wider(names_from = gender, values_from = avg_employed, names_prefix = "avg_employed_gender_")
+
+# sort smallest to largest column avg_employed_gender_2
+df_99_subset_avg_wide <- df_99_subset_avg_wide %>%
+  arrange(avg_employed_gender_2)
+```
+```{r}
+setwd(directory_data)
+print(getwd())
+province_list <- read.xlsx(province_names.xlsx)
+```
+  
 
 >>>>>>> 9de29109d949c2017a28c35f5e1f6c226a76869d
