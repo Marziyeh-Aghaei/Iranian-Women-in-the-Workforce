@@ -47,8 +47,8 @@ directory_data_LFS <- file.path(directory_data,"/LFS")
 setwd(directory_data_LFS)
 
 # create empty dataframes
-df_84_86 <- data.frame()
-df_87_99<- data.frame()
+df_84_86_ref <- data.frame()
+df_87_99_ref <- data.frame()
 
 # Loop through each file, read the data, and assign to a variable
 for (i in 84:99) {
@@ -58,13 +58,13 @@ for (i in 84:99) {
     
     # if i<87 merge data with df_84_86, else if i>87 merge data with df_87_99
     if (i < 87) {
-      df_84_86 <- bind_rows(df_84_86, data)
+      df_84_86_ref <- bind_rows(df_84_86_ref, data)
     } else {
       if (i < 96) {
         data <- subset(data, select = -IW15_Yearly)
         names(data)[names(data) == "IW10_Yearly"] <- "IW_Yearly"
       }
-      df_87_99 <- bind_rows(df_87_99, data)
+      df_87_99_ref <- bind_rows(df_87_99_ref, data)
     }
 }
 
@@ -73,28 +73,6 @@ rm(data)
 
 setwd(directory_data)
 province_list <- read.xlsx("province_names.xlsx")
-```
-```{r}
-#separate pkey column into 4 columns, first two digits are year, next two digits are province_code, next digit is if it is city/village, next three digit is the sample_number and the two last gigits are the family_number
-df_87_99_subset <- df_87_99 %>%
-  separate(pkey, into = c("year", "province_code", "city_village", "sample_number", "family_number"),
-           sep = c(2, 4, 5, 8))
-
-df_84_86_subset <- df_84_86 %>%
-  separate(pkey, into = c("year", "province_code", "city_village", "sample_number", "family_number"),
-           sep = c(2, 4, 5, 8))
-
-# rename colunm F2_D04 to gender
-df_87_99_subset <- df_87_99_subset %>%
-  rename(
-    gender = F2_D04,
-    age = F2_D07,
-    citizenship = F2_D08
-  )
-
-# if at least one of F3_D01 to F3_D06 is 1, then employed=1, else employed=0
-df_87_99_subset <- df_87_99_subset %>%
-  mutate(employed = if_else(F3_D01 == 1 | F3_D02 == 1 | F3_D03 == 1 | F3_D04 == 1 | F3_D05 == 1 | F3_D06 == 1, 1, 0))
 
 province_list <- province_list %>%
   rename(
@@ -102,70 +80,216 @@ province_list <- province_list %>%
     province_name = Name,
   )
 
-df_87_99_subset <- df_87_99_subset %>%
+```
+```{r}
+# separate pkey column into 4 columns
+df_87_99 <- df_87_99_ref %>% separate(pkey, into = c("year", "province_code", "urban_rural", "sample_number", "family_number"),
+           sep = c(2, 4, 5, 8))
+
+# merge with province_list
+df_87_99 <- df_87_99 %>%
   left_join(province_list, by = "province_code")
+```
+```{r}
+# basic cleaning
+
+# rename columns
+df_87_99 <- df_87_99 %>%
+  rename(
+    gender = F2_D04,
+    age = F2_D07,
+    citizenship = F2_D08,
+    look_for_job = F3_D31,
+    why_nlook_for_job = F3_D33,
+    why_left_work = F3_D44
+  )
+
+# if at least one of F3_D01 to F3_D06 is 1, then employed=1, else employed=0
+df_87_99 <- df_87_99 %>%
+  mutate(employed = if_else(F3_D01 == 1 | F3_D02 == 1 | F3_D03 == 1 | F3_D04 == 1 | F3_D05 == 1 | F3_D06 == 1, 1, 0))
+
+df_87_99 <- df_87_99 %>%
+  mutate(active = if_else(employed == 1 | look_for_job == 1 | why_nlook_for_job == "01" | why_nlook_for_job == "02" | why_nlook_for_job == "03" | why_nlook_for_job == "04" | why_nlook_for_job == "05", 1, 0))
+
+df_87_99 <- df_87_99 %>%
+  mutate(nwork_reason_family_issues = if_else(why_nlook_for_job == "10", 1, 0))
+
+df_87_99 <- df_87_99 %>%
+  mutate(nwork_reason_other = if_else(why_nlook_for_job == "06" | why_nlook_for_job == "07" | why_nlook_for_job == "08" | why_nlook_for_job == "09", 1, 0))
 
 # keep only rows with value 2 in column gender
-df_87_99_subset <- df_87_99_subset %>%
+df_87_99 <- df_87_99 %>%
   filter(citizenship==1) %>% filter(age > 16 & age < 64)
+
+# c
+```
+
+```{r}
+# datasets
+
+# Urban
+
+# LFP by province, urban
+df_99 <- df_87_99 %>%
+  filter(urban_rural==1,year==99)
+
+# by province_code and gender, take average on employed
+df_99_grouped_bygender_byprovince_var_avg_active <- df_99 %>%
+  group_by(province_name, gender) %>%
+  summarize(avg_active = mean(active))
+
+df_99_grouped_bygender_byprovince_var_avg_active_wide <- df_99_grouped_bygender_byprovince_var_avg_active %>%
+  pivot_wider(names_from = gender, values_from = avg_active, names_prefix = "avg_employed_gender_")
+
+print(df_99_grouped_bygender_byprovince_var_avg_active_wide)
+
+# Rural
+
+# LFP by province, urban
+df_99 <- df_87_99 %>%
+  filter(urban_rural==2,year==99)
+
+# by province_code and gender, take average on employed
+df_99_grouped_bygender_byprovince_var_avg_active <- df_99 %>%
+  group_by(province_name, gender) %>%
+  summarize(avg_active = mean(active))
+
+df_99_grouped_bygender_byprovince_var_avg_active_wide <- df_99_grouped_bygender_byprovince_var_avg_active %>%
+  pivot_wider(names_from = gender, values_from = avg_active, names_prefix = "avg_active_gender_")
+
+print(df_99_grouped_bygender_byprovince_var_avg_active_wide)
 ```
 
 ```{r}
 # LFP by province, urban
-df_99_subset_urban <- df_87_99_subset %>%
-  filter(city_village==1,year==99)
+df_87_99_urban_byyear <- df_87_99 %>% 
+  filter(urban_rural==1,gender==2) %>%
+  group_by(year) %>%
+  summarize(avg_active = mean(active),avg_nwork_reason_family_issues = mean(nwork_reason_family_issues)) 
 
-# by province_code and gender, take average on employed
-df_99_LFP_by_province_urban <- df_99_subset_urban %>%
-  group_by(year,province_name, gender) %>%
-  summarize(avg_employed = mean(employed))
-
-df_99_LFP_by_province_urban_wide <- df_99_LFP_by_province_urban %>%
-  pivot_wider(names_from = gender, values_from = avg_employed, names_prefix = "avg_employed_gender_")
-
-print(df_99_LFP_by_province_urban_wide)
-```
-```{r}
-# LFP by province, rural
-df_99_subset_rural <- df_87_99_subset %>%
-  filter(city_village==2,year==99)
-
-# by province_code and gender, take average on employed
-df_99_LFP_by_province_rural <- df_99_subset_rural %>%
-  group_by(year,province_name, gender) %>%
-  summarize(avg_employed = mean(employed))
-
-df_99_LFP_by_province_rural_wide <- df_99_LFP_by_province_rural %>%
-  pivot_wider(names_from = gender, values_from = avg_employed, names_prefix = "avg_employed_gender_")
-
-print(df_99_LFP_by_province_rural_wide)
-```
-```{r}
-# LFP by province, urban
-df_87_99_subset_urban <- df_87_99_subset %>%
-  filter(city_village==1,gender==2)
-
-# by province_code and gender, take average on employed
-df_87_99_LFP_by_province_urban <- df_87_99_subset_urban %>%
+df_87_99_urban_byyear_byprovince <- df_87_99 %>% 
+  filter(urban_rural==1,gender==2) %>%
   group_by(year,province_code,province_name) %>%
-  summarize(avg_employed = mean(employed))
+  summarize(avg_active = mean(active),avg_nwork_reason_family_issues = mean(nwork_reason_family_issues)) 
+
+# Create the plot
+plot <- ggplot() +
+  # Plot for female data
+  geom_line(data = df_87_99_urban_byyear, aes(x = year, y = avg_active, group = 1, color = "Active")) +
+  # Plot for combined data (female + female looking for job)
+  geom_line(data = df_87_99_urban_byyear, aes(x = year, y = avg_nwork_reason_family_issues, group = 1, color = "Not working because of family")) +
+  ggtitle("Labor Force Participation for Women in Urban Areas") +
+  labs(
+    x = "Year",
+    y = "Percentage",
+    color = "Legend"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(plot)
 
 # Loop through each unique province_code and create a line plot
-for (i in unique(df_87_99_LFP_by_province_urban$province_code)) {
+for (i in unique(df_87_99_urban_byyear_byprovince$province_code)) {
   # Filter the data for the current province_code
-  df_filtered <- df_87_99_LFP_by_province_urban %>%
+  df_filtered <- df_87_99_urban_byyear_byprovince %>%
     filter(province_code == i)
   
-  # Create the line plot
-  plot <- ggplot(df_filtered, aes(x = year, y = avg_employed, group = 1)) +
-    geom_line() +
-    ggtitle(paste("Province Name:", unique(df_filtered$province_name))) +
+  # Create the plot
+  plot <- ggplot() +
+    # Plot for female data
+    geom_line(data = df_filtered, aes(x = year, y = avg_active, group = 1, color = "Active")) +
+    # Plot for combined data (female + female looking for job)
+    geom_line(data = df_filtered, aes(x = year, y = avg_nwork_reason_family_issues, group = 1, color = "Not working because of family")) +
+    ggtitle(paste("Province:", unique(df_filtered$province_name))) +
+    labs(
+      x = "Year",
+      y = "Percentage",
+      color = "Legend"
+    ) +
     theme_minimal()
   
   # Print the plot
   print(plot)
+  
 }
 ```
+```{r}
+df_87_99_urban_female <- df_87_99 %>% 
+  filter(urban_rural==1,gender==2)
 
+# Count the number of values 1 to 13 by year for the why_left_work column
+reason_labels <- data.frame(
+  why_left_work = sprintf("%02d", 1:14),
+  reason_text = c(
+    "low income", "work place closed", "seasonal job",
+    "temporary job", "work place moved", 
+    "education", "layoff", 
+    "family issues", "migration", 
+    "retirement", "completing working period", 
+    "aging", "getting sick", "others"
+  )
+)
 
+df_counts <- df_87_99_urban_female %>%
+  group_by(year, why_left_work) %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  filter(!why_left_work=="") %>%
+  filter(!why_left_work=="&&") %>%
+  filter(count>0.1*max(count)) %>%
+  left_join(reason_labels, by = "why_left_work")
+
+# Create the plot
+plot <- ggplot(df_counts, aes(x = year, y = count, color = as.factor(reason_text), group = why_left_work)) +
+  geom_line() +
+  labs(
+    title = "Why Left Work: females",
+    x = "Year",
+    y = "Count",
+    color = "Reason"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(plot)
+
+df_87_99_urban_female <- df_87_99 %>% 
+  filter(urban_rural==1,gender==1)
+
+# Count the number of values 1 to 13 by year for the why_left_work column
+reason_labels <- data.frame(
+  why_left_work = sprintf("%02d", 1:14),
+  reason_text = c(
+    "low income", "work place closed", "seasonal job",
+    "temporary job", "work place moved", 
+    "education", "layoff", 
+    "family issues", "migration", 
+    "retirement", "completing working period", 
+    "aging", "getting sick", "others"
+  )
+)
+
+df_counts <- df_87_99_urban_female %>%
+  group_by(year, why_left_work) %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  filter(!why_left_work=="") %>%
+  filter(!why_left_work=="&&") %>%
+  filter(count>0.1*max(count)) %>%
+  left_join(reason_labels, by = "why_left_work")
+
+# Create the plot
+plot <- ggplot(df_counts, aes(x = year, y = count, color = as.factor(reason_text), group = why_left_work)) +
+  geom_line() +
+  labs(
+    title = "Why Left Work: males",
+    x = "Year",
+    y = "Count",
+    color = "Reason"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(plot)
+
+```
 >>>>>>> 9de29109d949c2017a28c35f5e1f6c226a76869d
