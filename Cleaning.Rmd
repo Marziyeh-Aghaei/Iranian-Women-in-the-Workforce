@@ -70,6 +70,9 @@ for (i in 84:99) {
 
 # remove variable data
 rm(data)
+
+setwd(directory_data)
+province_list <- read.xlsx("province_names.xlsx")
 ```
 ```{r}
 #separate pkey column into 4 columns, first two digits are year, next two digits are province_code, next digit is if it is city/village, next three digit is the sample_number and the two last gigits are the family_number
@@ -80,41 +83,89 @@ df_87_99_subset <- df_87_99 %>%
 df_84_86_subset <- df_84_86 %>%
   separate(pkey, into = c("year", "province_code", "city_village", "sample_number", "family_number"),
            sep = c(2, 4, 5, 8))
-```
 
-```{r}
 # rename colunm F2_D04 to gender
-colnames(df_87_99_subset)[colnames(df_87_99_subset) == "F2_D04"] <- "gender"
-colnames(df_87_99_subset)[colnames(df_87_99_subset) == "F2_D07"] <- "age"
-colnames(df_87_99_subset)[colnames(df_87_99_subset) == "F2_D08"] <- "citizenship"
-# keep only rows with value 2 in column gender
 df_87_99_subset <- df_87_99_subset %>%
-  filter(citizenship==1) %>% filter(age > 16 & age < 64)
+  rename(
+    gender = F2_D04,
+    age = F2_D07,
+    citizenship = F2_D08
+  )
 
 # if at least one of F3_D01 to F3_D06 is 1, then employed=1, else employed=0
 df_87_99_subset <- df_87_99_subset %>%
   mutate(employed = if_else(F3_D01 == 1 | F3_D02 == 1 | F3_D03 == 1 | F3_D04 == 1 | F3_D05 == 1 | F3_D06 == 1, 1, 0))
 
-df_99_subset <- df_87_99_subset %>%
-  filter(year==99) 
+province_list <- province_list %>%
+  rename(
+    province_code = Code,
+    province_name = Name,
+  )
+
+df_87_99_subset <- df_87_99_subset %>%
+  left_join(province_list, by = "province_code")
+
+# keep only rows with value 2 in column gender
+df_87_99_subset <- df_87_99_subset %>%
+  filter(citizenship==1) %>% filter(age > 16 & age < 64)
+```
+
+```{r}
+# LFP by province, urban
+df_99_subset_urban <- df_87_99_subset %>%
+  filter(city_village==1,year==99)
 
 # by province_code and gender, take average on employed
-df_99_subset_avg <- df_99_subset %>%
-  group_by(province_code, gender) %>%
+df_99_LFP_by_province_urban <- df_99_subset_urban %>%
+  group_by(year,province_name, gender) %>%
   summarize(avg_employed = mean(employed))
 
-df_99_subset_avg_wide <- df_99_subset_avg %>%
+df_99_LFP_by_province_urban_wide <- df_99_LFP_by_province_urban %>%
   pivot_wider(names_from = gender, values_from = avg_employed, names_prefix = "avg_employed_gender_")
 
-# sort smallest to largest column avg_employed_gender_2
-df_99_subset_avg_wide <- df_99_subset_avg_wide %>%
-  arrange(avg_employed_gender_2)
+print(df_99_LFP_by_province_urban_wide)
 ```
 ```{r}
-setwd(directory_data)
-print(getwd())
-province_list <- read.xlsx(province_names.xlsx)
+# LFP by province, rural
+df_99_subset_rural <- df_87_99_subset %>%
+  filter(city_village==2,year==99)
+
+# by province_code and gender, take average on employed
+df_99_LFP_by_province_rural <- df_99_subset_rural %>%
+  group_by(year,province_name, gender) %>%
+  summarize(avg_employed = mean(employed))
+
+df_99_LFP_by_province_rural_wide <- df_99_LFP_by_province_rural %>%
+  pivot_wider(names_from = gender, values_from = avg_employed, names_prefix = "avg_employed_gender_")
+
+print(df_99_LFP_by_province_rural_wide)
 ```
+```{r}
+# LFP by province, urban
+df_87_99_subset_urban <- df_87_99_subset %>%
+  filter(city_village==1,gender==2)
+
+# by province_code and gender, take average on employed
+df_87_99_LFP_by_province_urban <- df_87_99_subset_urban %>%
+  group_by(year,province_code,province_name) %>%
+  summarize(avg_employed = mean(employed))
+
+# Loop through each unique province_code and create a line plot
+for (i in unique(df_87_99_LFP_by_province_urban$province_code)) {
+  # Filter the data for the current province_code
+  df_filtered <- df_87_99_LFP_by_province_urban %>%
+    filter(province_code == i)
   
+  # Create the line plot
+  plot <- ggplot(df_filtered, aes(x = year, y = avg_employed, group = 1)) +
+    geom_line() +
+    ggtitle(paste("Province Name:", unique(df_filtered$province_name))) +
+    theme_minimal()
+  
+  # Print the plot
+  print(plot)
+}
+```
+
 
 >>>>>>> 9de29109d949c2017a28c35f5e1f6c226a76869d
