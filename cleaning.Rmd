@@ -1,0 +1,95 @@
+<<<<<<< HEAD
+---
+title: "Cleaning"
+author: "Marziyeh Aghaei"
+date: "2024-07-22"
+output:
+  html_document: 
+    code_folding: show
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,message = FALSE}
+# packages
+require(tidyverse)
+require(fixest)
+require(stargazer)
+require(haven)
+library(usethis)
+library(dplyr)
+library(foreign)
+library(gridExtra)
+library(ggplot2)
+library(openxlsx)
+library(RODBC)
+library(openxlsx)
+library(gridExtra)
+library(cowplot)
+library(RColorBrewer)
+
+# clear
+rm(list = ls())
+
+# set general data directory
+directory_data <- "C:/lfp/data/raw_data/"
+```
+```{r}
+# Load Data
+setwd(directory_data)
+
+# create empty dataframes
+df_1384_1386_ref <- data.frame()
+df_1387_1401_ref <- data.frame()
+
+# Loop through each file, read the data, and assign to a variable
+for (i in 1384:1401) {
+    file <- paste0("LFS_", i, ".dta")
+    data <- read_dta(file)
+    data <- data[, order(names(data))]
+    
+    # if i<87 merge data with df_84_86, else if i>87 merge data with df_87_99
+    if (i < 1387) {
+      df_1384_1386_ref <- bind_rows(df_1384_1386_ref, data)
+    } else {
+      if (i < 1396) {
+        data <- subset(data, select = -IW15_Yearly)
+        names(data)[names(data) == "IW10_Yearly"] <- "IW_Yearly"
+      }
+      df_1387_1401_ref <- bind_rows(df_1387_1401_ref, data)
+    }
+}
+
+# remove variable data
+rm(data)
+
+province_list <- read.xlsx("province_names.xlsx")
+
+province_list <- province_list %>%
+  rename(
+    province_code = Code,
+    province_name = Name,
+  )
+
+```
+```{r}
+# separate pkey column into 4 columns
+df <- df_1387_1401_ref %>%
+  mutate(pkey_copy = pkey) %>%  # Copy the original pkey column
+  separate(pkey_copy, into = c("year", "province_code", "urban_rural", "sample_number", "family_number"), sep = c(2, 4, 5, 8)) %>%
+  left_join(province_list, by = "province_code")
+
+df <- df[order(df$pkey), ]
+
+write_dta(df, path = "C:/lfp/data/intermediate_data/data_cleaned.dta")
+```
+
+
+
+
+>>>>>>> 9de29109d949c2017a28c35f5e1f6c226a76869d

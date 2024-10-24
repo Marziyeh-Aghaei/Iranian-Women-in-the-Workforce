@@ -1,0 +1,1360 @@
+<<<<<<< HEAD
+---
+  title: "Cleaning"
+author: "Marziyeh Aghaei"
+date: "2024-07-22"
+output:
+  html_document: 
+  code_folding: show
+   number_sections: yes
+   toc: yes
+   toc_depth: 2
+   toc_float: yes
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r,message = FALSE}
+# packages
+require(tidyverse)
+require(fixest)
+require(stargazer)
+require(haven)
+library(usethis)
+library(dplyr)
+library(foreign)
+library(gridExtra)
+library(ggplot2)
+library(openxlsx)
+library(RODBC)
+library(openxlsx)
+library(gridExtra)
+library(cowplot)
+library(RColorBrewer)
+
+# clear
+rm(list = ls())
+
+# import data
+df_ref <- read_dta("C:/lfp/data/intermediate_data/data_cleaned.dta")
+
+# set specific data directories
+directory_plot <- file.path("C:/lfp/plot/")
+```
+```{r}
+# cleaning
+df <- df_ref %>%
+  mutate(year = ifelse(as.integer(year) >= 87, paste0("13", year), paste0("14", year))) %>%
+  mutate(time = paste(year, "-", NobatAmargiri)) %>%
+  rename(
+    gender = F2_D04,
+    age = F2_D07,
+    citizenship = F2_D08,
+    look_for_job = F3_D31,
+    why_nlook_for_job = F3_D33,
+    why_left_work = F3_D44,
+    family_relation = F2_D03,
+    job_position_code = F3_D11,
+    education_level = F2_D17,
+    last_job_position_code = F3_D43
+  ) %>% 
+  mutate(gender=if_else(gender==1,"Male","Female")) %>%
+  filter(age>=16 & age<=64) %>% filter(citizenship==1) %>%
+  mutate(active = if_else(ActivityStatus == 1 | ActivityStatus == 2 , 1, 0))  %>%
+  mutate(job_position = case_when(
+    job_position_code == "01" ~ "employer",
+    job_position_code == "02" ~ "self-employed",
+    job_position_code == "03" ~ "unpaid_family_worker",
+    job_position_code == "04" ~ "employee_private_sector",
+    job_position_code == "05" ~ "employee_public_sector",
+    job_position_code == "06" ~ "employee_cooperative_sector",
+    job_position_code == "07" ~ "employee_public_sector", # trainee_public_sector
+    job_position_code == "08" ~ "employee_public_sector", # Unpaid_trainee_public_sector
+    job_position_code == "09" ~ "employee_private_sector", # trainee_private_sector
+    job_position_code == "10" ~ "employee_private_sector", # unpaid_trainee_private_sector
+    job_position_code == "" ~ "not_employed"
+  )) %>%
+  mutate(age_group = case_when(
+    age >= 16 & age < 24 ~ "16-23",
+    age >= 24 & age < 32 ~ "24-31",
+    age >= 32 & age < 40 ~ "32-39",
+    age >= 40 & age < 48 ~ "40-47",
+    age >= 48 & age < 56 ~ "48-55",
+    TRUE ~ "56+"
+  ))
+
+```
+
+
+```{r}
+# Assuming df_local is created as you described, for both urban and rural areas
+df_local <- df %>%
+  group_by(year, NobatAmargiri, gender, urban_rural) %>%
+  summarize(
+    avg_active = sum(active * IW_Yearly, na.rm = TRUE) / sum(IW_Yearly, na.rm = TRUE) * 100,
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri),
+         time = as.factor(time))  # Treating time as an ordered factor
+
+# Split data for male and female, urban and rural
+df_male_urban <- df_local %>% filter(gender == "Male", urban_rural == 1)
+df_female_urban <- df_local %>% filter(gender == "Female", urban_rural == 1)
+df_male_rural <- df_local %>% filter(gender == "Male", urban_rural == 2)
+df_female_rural <- df_local %>% filter(gender == "Female", urban_rural == 2)
+
+# Use RColorBrewer Set3 palette for colors
+colors <- brewer.pal(n = 3, name = "Set2")
+
+# Create the plot with twodash lines for rural data
+plot <- ggplot() +
+  # Plot for Urban Male on primary y-axis
+  geom_line(data = df_male_urban, aes(x = time, y = avg_active, color = "Male Urban", linetype = "Male Urban", group = 1), size = 0.8) +
+  
+  # Plot for Urban Female on secondary y-axis (with scaling)
+  geom_line(data = df_female_urban, aes(x = time, y = avg_active, color = "Female Urban", linetype = "Female Urban", group = 1), size = 0.8) +  
+  
+  # Plot for Rural Male with twodash lines
+  geom_line(data = df_male_rural, aes(x = time, y = avg_active, color = "Male Rural", linetype = "Male Rural", group = 1), size = 0.8) +
+  
+  # Plot for Rural Female on secondary y-axis with twodash lines
+  geom_line(data = df_female_rural, aes(x = time, y = avg_active, color = "Female Rural", linetype = "Female Rural", group = 1), size = 0.8) +  
+  
+  # Use Set3 palette for the colors
+  scale_color_manual(values = c("Male Urban" = colors[1], "Female Urban" = colors[2], 
+                                "Male Rural" = colors[1], "Female Rural" = colors[2])) +
+  
+  # Manually assign line types to show twodash for rural data and solid for urban data
+  scale_linetype_manual(values = c("Male Urban" = "solid", "Female Urban" = "solid", 
+                                   "Male Rural" = "twodash", "Female Rural" = "twodash")) +
+  
+  # Define secondary y-axis
+  scale_y_continuous(
+    name = "Male LFP (%)",
+    sec.axis = sec_axis(~ . / scale_factor, name = "Female LFP (%)")
+  ) +
+  
+  # Minimalist theme for professional appearance
+  theme_minimal() +
+  
+  # Adjust fonts, labels, and legend to match the journal style
+  theme(
+    text = element_text(family = "Times", size = 14),  # Match journal font (Times New Roman)
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    legend.position = "bottom",
+    panel.grid.major = element_line(size = 0.1, color = "grey90"),  # Subtle gridlines
+    panel.grid.minor = element_blank()
+  ) +
+  
+  labs(
+    x = "Time",
+    y = "Male Labor Force Participation (%)",
+    color = "Gender and Region",
+    linetype = "Gender and Region"  # Legend for linetype
+  ) +
+  
+  theme(
+    plot.margin = unit(c(2, 2, 2, 2), "cm")  # Larger margins to avoid clipping
+  )
+
+# Save the plot using ggsave
+ggsave(filename = file.path(directory_plot, "lfp_rural_vs_urban.png"), plot = plot, width = 10, height = 6, dpi = 300)
+
+```
+```{r}
+# Define the offset for shifting Female LFP
+offset <- 60  # Shifts Female LFP to align with Male y-axis
+
+# Assuming df_local is already created and contains the necessary variables
+
+# Split data for male and female, urban and rural
+df_male_urban <- df_local %>% filter(gender == "Male", urban_rural == 1)
+df_female_urban <- df_local %>% filter(gender == "Female", urban_rural == 1)
+df_male_rural <- df_local %>% filter(gender == "Male", urban_rural == 2)
+df_female_rural <- df_local %>% filter(gender == "Female", urban_rural == 2)
+
+# Use RColorBrewer Set2 palette for colors (ensure you have at least 2 colors)
+colors <- brewer.pal(n = 3, name = "Set2")
+
+# Create the plot with dual y-axes
+plot <- ggplot() +
+  
+  # Plot for Urban Male on primary y-axis
+  geom_line(
+    data = df_male_urban,
+    aes(x = time, y = avg_active, color = "Male Urban", linetype = "Male Urban", group = 1),
+    size = 0.8
+  ) +
+  
+  # Plot for Urban Female on primary y-axis shifted by offset
+  geom_line(
+    data = df_female_urban,
+    aes(x = time, y = avg_active + offset, color = "Female Urban", linetype = "Female Urban", group = 1),
+    size = 0.8
+  ) +
+  
+  # Plot for Rural Male on primary y-axis with twodash lines
+  geom_line(
+    data = df_male_rural,
+    aes(x = time, y = avg_active, color = "Male Rural", linetype = "Male Rural", group = 1),
+    size = 0.8
+  ) +
+  
+  # Plot for Rural Female on primary y-axis shifted by offset with twodash lines
+  geom_line(
+    data = df_female_rural,
+    aes(x = time, y = avg_active + offset, color = "Female Rural", linetype = "Female Rural", group = 1),
+    size = 0.8
+  ) + geom_vline(xintercept = which(levels(df_local$time) == "1398 - 4"), color = "black", linetype = "dashed", size = 0.2) +
+  
+  # Define manual colors
+  scale_color_manual(
+    values = c(
+      "Male Urban" = colors[1],
+      "Female Urban" = colors[2],
+      "Male Rural" = colors[1],
+      "Female Rural" = colors[2]
+    )
+  ) +
+  
+  # Define manual linetypes
+  scale_linetype_manual(
+    values = c(
+      "Male Urban" = "solid",
+      "Female Urban" = "solid",
+      "Male Rural" = "twodash",
+      "Female Rural" = "twodash"
+    )
+  ) +
+  
+  # Define primary and secondary y-axes with fixed ranges
+  scale_y_continuous(
+    name = "Male LFP (%)",
+    limits = c(65, 85),  # Primary y-axis range
+    breaks = seq(65, 85, by = 5),
+    sec.axis = sec_axis(
+      ~ . - offset,  # Inverse transformation for secondary axis
+      name = "Female LFP (%)",
+      breaks = seq(5, 25, by = 5)
+    )
+  ) +
+  
+  # Apply a minimalist theme
+  theme_minimal() +
+  
+  # Customize theme elements for professional appearance
+  theme(
+    text = element_text(family = "Times New Roman", size = 14),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    axis.text.x = element_text(angle = 90, hjust = -0.5, vjust = 0.45),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    legend.position = "bottom",
+    panel.grid.major = element_line(size = 0.1, color = "grey90"),
+    panel.grid.minor = element_blank(),
+    plot.margin = unit(c(1, 1, 1, 1), "cm")  # Adjust margins as needed
+  ) +
+  
+  # Define labels
+  labs(
+    x = "Time",
+    color = "Gender and Region",
+    linetype = "Gender and Region"
+  )
+
+# Save the plot using ggsave
+ggsave(filename = file.path(directory_plot, "lfp_rural_vs_urban.png"), plot = plot, width = 10, height = 6, dpi = 300)
+
+plot
+```
+
+```{r}
+# Prepare the data
+df_local <- df %>%
+  filter(urban_rural == 1) %>%
+  group_by(province_name, gender, year, NobatAmargiri) %>%
+  summarize(avg_active = mean(active, na.rm = TRUE))  # Added na.rm = TRUE to handle any missing values
+
+# Use the same color palette from RColorBrewer (Set2)
+colors <- brewer.pal(n = 3, name = "Set2")
+
+# Create the plot
+plot <- ggplot(df_local, aes(x = province_name, y = avg_active, color = gender)) +
+  # Geom_point for scatter plot
+  geom_point(size = 3) +  # Adjust size if necessary
+  
+  # Apply the same color scale
+  scale_color_manual(values = c("Male" = colors[1], "Female" = colors[2])) +
+  
+  # Labels and titles
+  labs(x = "Province", y = "LFP", title = "") +  # Removed the "color" argument from labs
+  
+  # Theme minimal for a clean professional look
+  theme_minimal() +
+  
+  # Consistent font, sizes, and alignment
+  theme(
+    text = element_text(family = "Times", size = 14),  # Set the font to Times New Roman
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),  # Rotating x-axis labels
+    axis.text.y = element_text(size = 12),
+    legend.title = element_blank(),  # Removed the legend title "Gender"
+    legend.text = element_text(size = 12),
+    legend.position = "bottom",  # Legend at the bottom
+    panel.grid.major = element_line(size = 0.1, color = "grey90"),  # Subtle gridlines
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Print the plot
+print(plot)
+
+```
+
+
+```{r}
+# Prepare the data (filter for females only and selected years)
+df_local <- df %>%
+  filter(urban_rural == 1, gender == "Female", year %in% c("1392","1393","1394","1395","1396","1397","1398","1399","1400","1401")) %>%
+  group_by(province_name, year) %>%
+  summarize(avg_active = mean(active, na.rm = TRUE), .groups = 'drop')
+
+# Generate a color palette based on Set2 and expand it dynamically if necessary
+n_years <- length(unique(df_local$year))
+colors <- colorRampPalette(brewer.pal(8, "Set2"))(n_years)  # Expand Set2 palette for more than 8 years if needed
+
+# Create the plot with color differentiation by year using Set2 colors
+plot <- ggplot(df_local, aes(x = province_name, y = avg_active, color = factor(year))) +
+  # Geom_point for scatter plot
+  geom_point(size = 3) +  # Size for dots
+  
+  # Apply the Set2 color scale for years
+  scale_color_manual(values = colors) +
+  
+  # Labels and titles
+  labs(x = "Province", y = "LFP (Female)", color = "Year") +  
+  
+  # Theme minimal for a clean professional look
+  theme_minimal() +
+  
+  # Consistent font, sizes, and alignment
+  theme(
+    text = element_text(family = "Times", size = 14),  # Set the font to Times New Roman
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),  # Rotating x-axis labels
+    axis.text.y = element_text(size = 12),
+    legend.title = element_text(size = 12),  # Titles for year
+    legend.text = element_text(size = 12),
+    legend.position = "bottom",  # Legend at the bottom
+    panel.grid.major = element_line(size = 0.1, color = "grey90"),  # Subtle gridlines
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Print the plot
+print(plot)
+
+```
+```{r}
+# Function to summarize data
+summarize_share <- function(data, gender_filter = NULL, dependent_var) {
+  filtered_data <- if (!is.null(gender_filter)) data %>% filter(gender == gender_filter) else data
+  summarized_data <- filtered_data %>%
+    group_by(year, NobatAmargiri) %>%
+    summarize(
+      share = sum({{dependent_var}} * IW_Yearly/ sum(IW_Yearly, na.rm = TRUE), na.rm = TRUE) * 100,
+      .groups = 'drop'
+      # / sum(IW_Yearly, na.rm = TRUE)
+    )
+  summarized_data$time <- paste(summarized_data$year, "-", summarized_data$NobatAmargiri)
+  return(summarized_data)
+}
+```
+
+```{r}
+# Prepare the data (filter for females only and selected years)
+df_local <- df %>%
+  filter(urban_rural == 1) 
+
+# Modify the plot_lfp_by_gender function
+plot_lfp_by_gender <- function(df_local, gender_filter, title) {
+  # Summarize data for different job positions
+  lfp_private_sector <- summarize_share(df_local, gender_filter = gender_filter, dependent_var = job_position == 'employee_private_sector') 
+  lfp_public_sector <- summarize_share(df_local, gender_filter = gender_filter, dependent_var = job_position == 'employee_public_sector') 
+  lfp_self_employed <- summarize_share(df_local, gender_filter = gender_filter, dependent_var = job_position == 'self-employed') 
+  lfp_employer <- summarize_share(df_local, gender_filter = gender_filter, dependent_var = job_position == 'employer') 
+  lfp_employee_cooperative_sector <- summarize_share(df_local, gender_filter = gender_filter, dependent_var = job_position == 'employee_cooperative_sector')
+  lfp_unpaid_family_worker <- summarize_share(df_local, gender_filter = gender_filter, dependent_var = job_position == 'unpaid_family_worker') 
+  colors <- brewer.pal(n = 6, name = "Set2") 
+  
+  # Create the plot
+  plot <- ggplot() +
+    # Add lines for each job position
+    geom_line(data = lfp_private_sector, aes(x = time, y = share, group = 1, color = "employee_private_sector"), size = 0.5) +
+    geom_line(data = lfp_public_sector, aes(x = time, y = share, group = 1, color = "employee_public_sector"), size = 0.5) + 
+    geom_line(data = lfp_self_employed , aes(x = time, y = share, group = 1, color = "self-employed"), size = 0.5) +
+    geom_line(data = lfp_employer, aes(x = time, y = share, group = 1, color = "employer"), size = 0.5) +
+    geom_line(data = lfp_employee_cooperative_sector, aes(x = time, y = share, group = 1, color = "employee_cooperative_sector"), size = 0.5) +
+    geom_line(data = lfp_unpaid_family_worker, aes(x = time, y = share, group = 1, color = "unpaid_family_worker"), size = 0.5) +
+    
+    # Add points (dots) for each job position
+    geom_point(data = lfp_private_sector, aes(x = time, y = share, color = "employee_private_sector"), size = 1) +
+    geom_point(data = lfp_public_sector, aes(x = time, y = share, color = "employee_public_sector"), size = 1) + 
+    geom_point(data = lfp_self_employed, aes(x = time, y = share, color = "self-employed"), size = 1) +
+    geom_point(data = lfp_employer, aes(x = time, y = share, color = "employer"), size = 1) +
+    geom_point(data = lfp_employee_cooperative_sector, aes(x = time, y = share, color = "employee_cooperative_sector"), size = 1) +
+    geom_point(data = lfp_unpaid_family_worker, aes(x = time, y = share, color = "unpaid_family_worker"), size = 1) +
+    
+    # Vertical lines
+    geom_vline(xintercept = c("1392 - 1", "1398 - 4"), linetype = "dashed", color = "black", size = 0.5) +
+    
+    # Labels and color scale
+    labs(
+      title = title,
+      x = "TIme",
+      y = "Labor Force Participation (Percentage)",
+      color = ""
+    ) +
+    scale_color_manual(values = c(
+      "employee_private_sector"     = colors[1],  # Red
+      "employee_public_sector"      = colors[2],  # Blue
+      "self-employed"               = colors[3],  # Green
+      "employer"                    = colors[4],  # Purple
+      "employee_cooperative_sector" = colors[5],  # Orange
+      "unpaid_family_worker"        = colors[6]   # Yellow
+    ),
+    labels = c(
+      "employee_private_sector"     = "Employee Private Sector",
+      "employee_public_sector"      = "Employee Public Sector",
+      "self-employed"               = "Self Employed",
+      "employer"                    = "Employer",
+      "employee_cooperative_sector" = "Employee Cooperative Sector",
+      "unpaid_family_worker"        = "Unpaid Family Worker"
+    )) +
+    theme_minimal(base_size = 10) +
+    theme(
+      legend.position = "bottom",
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+      panel.grid.major = element_blank(),  # Removing major grid lines for a cleaner look
+      panel.grid.minor = element_blank(),  # Removing minor grid lines for a cleaner look
+      axis.title = element_text(face = "bold"),
+      axis.line = element_line(color = "black"),
+      legend.title = element_blank(),  # No legend title
+      legend.text = element_text(size = 10)
+    )
+  
+  print(plot)
+  
+  # Clean up memory
+  rm(lfp_private_sector, lfp_public_sector, lfp_self_employed, lfp_employer, lfp_employee_cooperative_sector, lfp_unpaid_family_worker, plot)
+}
+
+# Plot for women (gender_filter = 2)
+plot1 <- plot_lfp_by_gender(df_local, gender_filter = "Female", title = "")
+ggsave(filename = file.path(directory_plot,"plot_lfp_by_gender_timeseries_women.png"), plot = plot1, width = 8, height = 6)
+
+# Plot for men (gender_filter = 1)
+plot2 <- plot_lfp_by_gender(df_local, gender_filter = "Male", title = "")
+ggsave(filename = file.path(directory_plot,"plot_lfp_by_gender_timeseries_men.png"), plot = plot2, width = 8, height = 6)
+
+
+```
+
+```{r}
+# Filter and group the data
+df_local <- df %>%
+  filter(urban_rural == 1, job_position == 'employee_private_sector', gender == "Female") 
+
+# Ensure proper calculation of shares within groups (using weighted number of people)
+df_combined <- df_local %>%
+  group_by(year, NobatAmargiri) %>%
+  mutate(total_weight = sum(IW_Yearly, na.rm = TRUE)) %>%  # Total weight for the year and NobatAmargiri
+  group_by(year, NobatAmargiri, age_group) %>%
+  summarize(
+    weighted_people_in_group = sum(IW_Yearly, na.rm = TRUE),  # Weighted sum of people in each age group
+    share = weighted_people_in_group / total_weight * 100,  # Calculate share based on total weight
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Create the stacked bar chart
+plot <- ggplot(df_combined, aes(x = time, y = share, fill = age_group)) +
+  geom_bar(stat = "identity", position = "fill") +  # Stacked bar with shares summing to 1
+  geom_vline(xintercept = c(1391.25, 1397.1, 1398.4), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Proportion of Women LFP in Private Sector by Age Group",
+    x = "Year",
+    y = "Proportion of LFP",
+    fill = "Age Group"
+  ) +
+  scale_fill_manual(values = c(
+    "16-23" = "#fdae61",  # Orange
+    "24-31" = "#2b83ba",  # Blue
+    "32-39" = "#abdda4",  # Light green
+    "40-47" = "#800080",  # Purple
+    "48-55" = "#d73027",  # Red
+    "56+"   = "#1a9850"   # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  )
+
+print(plot)
+
+# Clean up memory
+rm(df_combined, plot)
+
+
+```
+
+
+
+
+
+
+
+```{r}
+# Summarize data for different age groups
+df_local <- df %>% filter(urban_rural == 1) 
+
+lfp_data <- df_local %>%
+  filter(gender == "Female") %>%  # Filter for gender
+  group_by(year, NobatAmargiri, age_group) %>%  # Grouping by year, NobatAmargiri, and age_group
+  summarize(
+    share = sum(active * IW_Yearly / sum(IW_Yearly, na.rm = TRUE), na.rm = TRUE) * 100,
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Create the plot
+plot <- ggplot(lfp_data, aes(x = time, y = share, group = age_group, color = age_group)) +
+  geom_line(size = 0.8) +
+  geom_vline(xintercept = c("1391 - 4", "1397 - 1", "1398 - 4"), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Labor Force Participation by Age Group",
+    x = "Year",
+    y = "Labor Force Participation (LFP)",
+    color = "Age Group"
+  ) +
+  scale_color_manual(values = c(
+    "16-23" = "#fdae61",    # Orange
+    "24-31" = "#2b83ba",    # Blue
+    "32-39" = "#abdda4",    # Light green
+    "40-47" = "#800080",    # Purple
+    "48-55" = "#d73027",    # Red
+    "56+"   = "#1a9850"     # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),  # Removing major grid lines for a cleaner look
+    panel.grid.minor = element_blank(),  # Removing minor grid lines for a cleaner look
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black"),
+    legend.title = element_blank(),  # No legend title
+    legend.text = element_text(size = 12)
+  )
+
+print(plot)
+
+
+```
+
+
+
+```{r}
+# Filter and categorize education levels for the df_local dataset
+df_local <- df %>%
+  filter(urban_rural == 1, job_position == 'employee_private_sector', gender == "Female")
+
+# Ensure proper calculation of shares within groups (using weighted number of people)
+df_combined <- df_local %>%
+  group_by(year, NobatAmargiri) %>%
+  mutate(total_weight = sum(IW_Yearly, na.rm = TRUE)) %>%  # Total weight for the year and NobatAmargiri
+  group_by(year, NobatAmargiri, education_level) %>%
+  summarize(
+    weighted_people_in_group = sum(IW_Yearly, na.rm = TRUE),  # Weighted sum of people in each education level group
+    share = weighted_people_in_group / total_weight * 100,  # Calculate share based on total weight
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Create the stacked bar chart
+plot <- ggplot(df_combined, aes(x = time, y = share, fill = education_level)) +
+  geom_bar(stat = "identity", position = "fill") +  # Stacked bar with shares summing to 1
+  geom_vline(xintercept = c(1391.25, 1397.1, 1398.4), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Proportion of Women LFP in Private Sector by Education Level",
+    x = "Year",
+    y = "Proportion of LFP",
+    fill = "Education Level"
+  ) +
+  scale_fill_manual(values = c(
+    "Literacy"         = "#fdae61",  # Orange
+    "High School"      = "#2b83ba",  # Blue
+    "Diploma"          = "#abdda4",  # Light green
+    "College"          = "#800080",  # Purple
+    "Graduate Level"   = "#d73027",  # Red
+    "Other"            = "#1a9850"   # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  )
+
+print(plot)
+
+# Clean up memory
+rm(df_combined, plot)
+
+```
+```{r}
+
+# Step 1: Filter and categorize education levels
+df_local <- df %>%
+  filter(urban_rural == 1) 
+
+# Step 2: Summarize labor force participation data by education level
+lfp_data <- df_local %>%
+  filter(gender == "Female") %>%  # Filter for gender (female)
+  group_by(year, NobatAmargiri, education_level) %>%  # Grouping by year, NobatAmargiri, and education_level
+  summarize(
+    share = sum(active * IW_Yearly / sum(IW_Yearly, na.rm = TRUE), na.rm = TRUE) * 100,
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Step 3: Create the plot for education levels
+plot <- ggplot(lfp_data, aes(x = time, y = share, group = education_level, color = education_level)) +
+  geom_line(size = 0.8) +
+  geom_vline(xintercept = c("1391 - 4", "1397 - 1", "1398 - 4"), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Labor Force Participation by Education Level",
+    x = "Year",
+    y = "Labor Force Participation (LFP)",
+    color = "Education Level"
+  ) +
+  scale_color_manual(values = c(
+    "Literacy"        = "#fdae61",  # Orange
+    "High School"     = "#2b83ba",  # Blue
+    "Diploma"         = "#abdda4",  # Light green
+    "College"         = "#800080",  # Purple
+    "Graduate Level"  = "#d73027",  # Red
+    "Other"           = "#1a9850"   # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),  # Removing major grid lines for a cleaner look
+    panel.grid.minor = element_blank(),  # Removing minor grid lines for a cleaner look
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  )
+
+print(plot)
+
+
+```
+```{r}
+df_local <- df %>% 
+  mutate(education_level = case_when(
+    education_level == 1 ~ "Literacy",
+    education_level == 2 ~ "High School",
+    education_level == 3 ~ "High School",
+    education_level == 4 ~ "Diploma",
+    education_level == 5 ~ "College",
+    education_level == 6 ~ "College",
+    education_level == 7 ~ "Graduate Level",
+    education_level == 8 ~ "Graduate Level",
+    education_level == 9 ~ "Other"
+  )) %>% filter(education_level != "Other") %>%
+  group_by(pkey) %>%
+  mutate(education_level_head = education_level[family_relation == 1][1]) %>%  # Get education level for the head of the family
+  ungroup() %>%
+  filter(urban_rural == 1, job_position == 'employee_private_sector', gender == 2, family_relation==2) %>%
+  mutate(education_level_spouse = education_level_head)
+
+# Ensure proper calculation of shares within groups (using weighted number of people)
+df_combined <- df_local %>%
+  group_by(year, NobatAmargiri) %>%
+  mutate(total_weight = sum(IW_Yearly, na.rm = TRUE)) %>%  # Total weight for the year and NobatAmargiri
+  group_by(year, NobatAmargiri, education_level_spouse) %>%
+  summarize(
+    weighted_people_in_group = sum(IW_Yearly, na.rm = TRUE),  # Weighted sum of people in each education level group
+    share = weighted_people_in_group / total_weight * 100,  # Calculate share based on total weight
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Create the stacked bar chart
+plot <- ggplot(df_combined, aes(x = time, y = share, fill = education_level_spouse)) +
+  geom_bar(stat = "identity", position = "fill") +  # Stacked bar with shares summing to 1
+  geom_vline(xintercept = c(1391.25, 1397.1, 1398.4), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Proportion of Women LFP in Private Sector by Education Level Spouse",
+    x = "Year",
+    y = "Proportion of LFP",
+    fill = "Education Level"
+  ) +
+  scale_fill_manual(values = c(
+    "Literacy"         = "#fdae61",  # Orange
+    "High School"      = "#2b83ba",  # Blue
+    "Diploma"          = "#abdda4",  # Light green
+    "College"          = "#800080",  # Purple
+    "Graduate Level"   = "#d73027",  # Red
+    "Other"            = "#1a9850"   # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  )
+
+print(plot)
+
+# Clean up memory
+rm(df_combined, plot)
+
+```
+```{r}
+# Step 1: Filter and categorize education levels
+df_local <- df %>% 
+  mutate(education_level = case_when(
+    education_level == 1 ~ "Literacy",
+    education_level == 2 ~ "High School",
+    education_level == 3 ~ "High School",
+    education_level == 4 ~ "Diploma",
+    education_level == 5 ~ "College",
+    education_level == 6 ~ "College",
+    education_level == 7 ~ "Graduate Level",
+    education_level == 8 ~ "Graduate Level",
+    education_level == 9 ~ "Other"
+  )) %>% filter(education_level != "Other") %>%
+  group_by(pkey) %>%
+  mutate(education_level_head = education_level[family_relation == 1][1]) %>%  # Get education level for the head of the family
+  ungroup() %>%
+  filter(urban_rural == 1, gender == 2, family_relation==2) %>%
+  mutate(education_level_spouse = education_level_head)
+
+# Step 2: Summarize labor force participation data by education level
+lfp_data <- df_local %>%
+  filter(gender == 2) %>%  # Filter for gender (female)
+  group_by(year, NobatAmargiri, education_level_spouse) %>%  # Grouping by year, NobatAmargiri, and education_level
+  summarize(
+    share = sum(active * IW_Yearly / sum(IW_Yearly, na.rm = TRUE), na.rm = TRUE) * 100,
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Step 3: Create the plot for education levels
+plot <- ggplot(lfp_data, aes(x = time, y = share, group = education_level_spouse, color = education_level_spouse)) +
+  geom_line(size = 0.8) +
+  geom_vline(xintercept = c("1391 - 4", "1397 - 1", "1398 - 4"), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Labor Force Participation by Education Level Spouse",
+    x = "Year",
+    y = "Labor Force Participation (LFP)",
+    color = "Education Level"
+  ) +
+  scale_color_manual(values = c(
+    "Literacy"        = "#fdae61",  # Orange
+    "High School"     = "#2b83ba",  # Blue
+    "Diploma"         = "#abdda4",  # Light green
+    "College"         = "#800080",  # Purple
+    "Graduate Level"  = "#d73027",  # Red
+    "Other"           = "#1a9850"   # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),  # Removing major grid lines for a cleaner look
+    panel.grid.minor = element_blank(),  # Removing minor grid lines for a cleaner look
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12)
+  )
+
+print(plot)
+```
+```{r}
+df_local <- df %>%
+  group_by(pkey) %>%
+  mutate(child_at_home = ifelse(any(family_relation == 3), 1, 0)) %>%  # Check if any F2_D03 == 3 for each group
+  ungroup() %>%  # Ungroup after mutating
+  filter(urban_rural == 1, gender == 2, job_position == 'employee_private_sector') %>%  # Filter by urban_rural and gender
+  mutate(marital_status = case_when(
+    F2_D19 == 1 & child_at_home == 0 ~ "Married-no Child",
+    F2_D19 == 1 & child_at_home == 1 ~ "Married-with Child",
+    (F2_D19 == 2 | F2_D19 == 3) & child_at_home == 0 ~ "Divorced/Widowed-no Child",  # Use single | for OR
+    (F2_D19 == 2 | F2_D19 == 3) & child_at_home == 1 ~ "Divorced/Widowed-with Child",
+    F2_D19 == 4 ~ "Never Married"
+  )) 
+
+# Ensure proper calculation of shares within groups (using weighted number of people)
+df_combined <- df_local %>%
+  group_by(year, NobatAmargiri) %>%
+  mutate(total_weight = sum(IW_Yearly, na.rm = TRUE)) %>%  # Total weight for the year and NobatAmargiri
+  group_by(year, NobatAmargiri, marital_status) %>%  # Group by marital status instead of education level
+  summarize(
+    weighted_people_in_group = sum(IW_Yearly, na.rm = TRUE),  # Weighted sum of people in each marital status group
+    share = weighted_people_in_group / total_weight * 100,  # Calculate share based on total weight
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Create the stacked bar chart
+plot <- ggplot(df_combined, aes(x = time, y = share, fill = marital_status)) +
+  geom_bar(stat = "identity", position = "fill") +  # Stacked bar with shares summing to 1
+  geom_vline(xintercept = c(1391.25, 1397.1, 1398.4), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Proportion of Women LFP in Private Sector by Marital Status",
+    x = "Year",
+    y = "Proportion of LFP",
+    fill = "Marital Status"
+  ) +
+  scale_fill_manual(values = c(
+    "Married-no Child"             = "#fdae61",  # Orange
+    "Married-with Child"           = "#2b83ba",  # Blue
+    "Divorced/Widowed-no Child"    = "#abdda4",  # Light green
+    "Divorced/Widowed-with Child"  = "#800080",  # Purple
+    "Never Married"                          = "#1a9850"   # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8)
+  )
+
+print(plot)
+
+# Clean up memory
+rm(df_combined, plot)
+
+```
+```{r}
+# Step 1: Filter and categorize marital status
+df_local <- df %>%
+  group_by(pkey) %>%
+  mutate(child_at_home = ifelse(any(family_relation == 3), 1, 0)) %>%  # Check if any F2_D03 == 3 for each group
+  ungroup() %>%  # Ungroup after mutating
+  filter(urban_rural == 1, gender == 2) %>%  # Filter by urban_rural and gender
+  filter(F2_D19 %in% c(1, 2, 3, 4)) %>%  # Filter for valid marital status values
+  mutate(marital_status = case_when(
+    F2_D19 == 1 & child_at_home == 0 ~ "Married-no Child",
+    F2_D19 == 1 & child_at_home == 1 ~ "Married-with Child",
+    (F2_D19 == 2 | F2_D19 == 3) & child_at_home == 0 ~ "Divorced/Widowed-no Child",  # Use single | for OR
+    (F2_D19 == 2 | F2_D19 == 3) & child_at_home == 1 ~ "Divorced/Widowed-with Child",
+    F2_D19 == 4 ~ "Never Married"
+  )) 
+
+# Step 2: Summarize labor force participation data by marital status
+lfp_data <- df_local %>%
+  filter(gender == 2) %>%  # Filter for gender (female)
+  group_by(year, NobatAmargiri, marital_status) %>%  # Grouping by year, NobatAmargiri, and marital status
+  summarize(
+    share = sum(active * IW_Yearly / sum(IW_Yearly, na.rm = TRUE), na.rm = TRUE) * 100,
+    .groups = 'drop'
+  ) %>%
+  mutate(time = paste(year, "-", NobatAmargiri))  # Create time column
+
+# Step 3: Create the plot for marital status with 2-row legend
+plot <- ggplot(lfp_data, aes(x = time, y = share, group = marital_status, color = marital_status)) +
+  geom_line(size = 0.8) +
+  geom_vline(xintercept = c("1391 - 4", "1397 - 1", "1398 - 4"), linetype = "dashed", color = "black", size = 0.5) +
+  labs(
+    title = "Labor Force Participation by Marital Status",
+    x = "Year",
+    y = "Labor Force Participation (LFP)",
+    color = "Marital Status"
+  ) +
+  scale_color_manual(values = c(
+    "Married-no Child"             = "#fdae61",  # Orange
+    "Married-with Child"           = "#2b83ba",  # Blue
+    "Divorced/Widowed-no Child"    = "#abdda4",  # Light green
+    "Divorced/Widowed-with Child"  = "#800080",  # Purple
+    "Never Married"                = "#1a9850"   # Green
+  )) +
+  theme_minimal(base_size = 10) +
+  guides(color = guide_legend(nrow = 2)) +  # Set legend to 2 rows
+  theme(
+    legend.position = "bottom",  # Legend positioned at the bottom
+    legend.title = element_blank(),  # Remove legend title
+    legend.text = element_text(size = 12),  # Adjust text size
+    legend.spacing.x = unit(0.5, 'cm'),  # Adjust spacing between legend items
+    legend.spacing.y = unit(0.5, 'cm'),  # Adjust spacing between legend rows
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(face = "bold"),
+    axis.line = element_line(color = "black")
+  )
+
+print(plot)
+```
+
+
+
+
+
+
+
+
+```{r}
+# LFP by province, urban
+# Calculate the desired summary
+df_local_1 <- df %>%
+  filter(urban_rural == 1, gender == 2) %>%
+  group_by(year) %>%
+  summarize(
+    avg_active = mean(active, na.rm = TRUE)* 100,
+    perc_nwork_reason_6 = mean(why_nlook_for_job == 6, na.rm = TRUE) * 100,
+    perc_nwork_reason_7 = mean(why_nlook_for_job == 7, na.rm = TRUE) * 100,
+    perc_nwork_reason_8 = mean(why_nlook_for_job == 8, na.rm = TRUE) * 100,
+    perc_nwork_reason_9 = mean(why_nlook_for_job == 9, na.rm = TRUE) * 100,
+    perc_nwork_reason_10 = mean(why_nlook_for_job == 10, na.rm = TRUE) * 100,
+    perc_nwork_reason_11 = mean(why_nlook_for_job == 11, na.rm = TRUE) * 100,
+    perc_nwork_reason_12 = mean(why_nlook_for_job == 12, na.rm = TRUE) * 100
+  )
+
+
+# Create the plot
+plot1 <- ggplot() +
+  geom_line(data = df_local_1, aes(x = year, y = avg_active, group = 1, color = "Active")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_6, group = 1, color = "Seasonal Work")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_7, group = 1, color = "Inability to Search for Jobs")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_8, group = 1, color = "Disease, Temporary Disability, Pregnancy")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_9, group = 1, color = "Studying")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_10, group = 1, color = "Family Responsibilities")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_11, group = 1, color = "No Need for Work")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_12, group = 1, color = "Other Reasons")) +
+  geom_vline(xintercept = "1392", linetype = "dashed", color = "black") +
+  geom_vline(xintercept = "1397", linetype = "dashed", color = "black") +
+  geom_vline(xintercept = "1399", linetype = "dashed", color = "black") +
+  ggtitle("Men's Activity and Inactivity in Urban Areas") +
+  labs(
+    x = "Year",
+    y = "Percentage",
+    color = "Reason"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# annotate("text", x = "1392", y = Inf, label = "reformist party", vjust = 1.5, color = "black") +
+
+# Print the plot
+print(plot1)
+
+```
+```{r}
+# Count the number of values 1 to 13 by year for the why_left_work column
+reason_labels <- data.frame(
+  why_left_work = sprintf("%02d", 1:14),
+  reason_text = c(
+    "low income", "work place closed", "seasonal job",
+    "temporary job", "work place moved", 
+    "education", "layoff", 
+    "family issues", "migration", 
+    "retirement", "completing working period", 
+    "aging", "getting sick", "others"
+  )
+)
+
+# Calculate the total population per year
+total_population <- df %>%
+  filter(urban_rural == 1, gender == 2) %>%
+  group_by(time) %>%
+  summarize(total_population = n())
+
+# Calculate the percentages
+df_local_1 <- df %>%
+  filter(urban_rural == 1, gender == 2) %>%
+  filter(!why_left_work %in% c("", "&&")) %>%
+  group_by(time, why_left_work) %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  filter(count > 0.1 * max(count)) %>%
+  left_join(total_population, by = "time") %>%
+  left_join(reason_labels, by = "why_left_work") %>%
+  mutate(percentage = (count / total_population) * 100)
+
+# Define custom colors and line types
+custom_colors <- c(
+  "low income" = "blue", "work place closed" = "green", "seasonal job" = "red",
+  "temporary job" = "purple", "work place moved" = "orange", 
+  "education" = "brown", "layoff" = "darkgrey", 
+  "family issues" = "cyan", "migration" = "magenta", 
+  "retirement" = "yellow", "completing working period" = "darkgreen", 
+  "aging" = "darkblue", "getting sick" = "darkred", "others" = "black"
+)
+
+# Create the plot
+plot1 <- ggplot(df_local_1, aes(x = time, y = percentage, color = reason_text, group = why_left_work)) +
+  geom_line() +
+  geom_point(size = 1) +  # Add dots for actual data points
+  scale_color_manual(values = custom_colors) +
+  labs(
+    title = "Reasons for Leaving Work: Female Employees",
+    x = "Time",
+    y = "Percentage of Total Population",
+    color = "Reason",
+    linetype = "Reason"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(hjust = 0.5))
+
+# Print the plot
+print(plot1)
+
+
+# Calculate the total population per year
+total_population <- df %>%
+  filter(urban_rural == 1, gender == 1) %>%
+  group_by(year) %>%
+  summarize(total_population = n())
+
+# Calculate the percentages
+df_local_2 <- df %>%
+  filter(urban_rural == 1, gender == 1) %>%
+  filter(!why_left_work %in% c("", "&&")) %>%
+  group_by(year, why_left_work) %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  filter(count > 0.1 * max(count)) %>%
+  left_join(total_population, by = "year") %>%
+  left_join(reason_labels, by = "why_left_work") %>%
+  mutate(percentage = (count / total_population) * 100)
+
+# Define custom colors and line types
+custom_colors <- c(
+  "low income" = "blue", "work place closed" = "green", "seasonal job" = "red",
+  "temporary job" = "purple", "work place moved" = "orange", 
+  "education" = "brown", "layoff" = "darkgrey", 
+  "family issues" = "cyan", "migration" = "magenta", 
+  "retirement" = "yellow", "completing working period" = "darkgreen", 
+  "aging" = "darkblue", "getting sick" = "darkred", "others" = "black"
+)
+
+# Create the plot
+plot2 <- ggplot(df_local_2, aes(x = year, y = percentage, color = reason_text, group = why_left_work)) +
+  geom_line() +
+  geom_point(size = 1) +  # Add dots for actual data points
+  scale_color_manual(values = custom_colors) +
+  labs(
+    title = "Reasons for Leaving Work: Male Employees",
+    x = "Year",
+    y = "Percentage of Total Population",
+    color = "Reason",
+    linetype = "Reason"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(hjust = 0.5))
+
+# Print the plot
+print(plot2)
+```
+
+
+```{r}
+# Calculate the count of family_relation == 1 for each pkey
+count_family_relation <- df %>%
+  group_by(pkey) %>%
+  summarize(count_family_relation_1 = sum(family_relation == 1)) %>%
+  ungroup()
+
+# Join the count as a new column to the original dataframe
+df_unique_head <- df %>%
+  left_join(count_family_relation, by = "pkey") 
+
+df_unique_head <- df_unique_head %>%
+  filter(count_family_relation_1==1)
+
+# for df, by pkey, find job_position for family_relation==1 and repear it in all rows with the same pkey
+df_unique_head <- df_unique_head %>%
+  group_by(pkey) %>%
+  mutate(job_position_head = job_position[family_relation == 1]) %>%
+  mutate(gender_head = gender[family_relation == 1]) %>%
+  filter(!is.na(job_position_head)) 
+
+df_unique_head_male <- df_unique_head %>% filter(gender_head==1)
+
+df_unique_head_male <- df_unique_head_male %>% filter(gender==2 & family_relation==2)
+
+# Create the plot
+df_unique_head_wife_LFP <- df_unique_head_male %>%
+  group_by(year, job_position_head) %>%
+  summarize(avg_active = mean(active)) %>%
+  filter(job_position_head=="employee_private_sector" | job_position_head=="employee_Public_sector" | job_position_head=="employer" | job_position_head=="self_employed")
+
+plot <- ggplot(df_unique_head_wife_LFP, aes(x = year, y = avg_active, color = job_position_head, group = job_position_head)) +
+  geom_line() +
+  labs(
+    title = "Females' LFP by spouse's job position ",
+    x = "Year",
+    y = "LFP",
+    color = "job_position_head"
+  ) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+# Print the plot
+print(plot)
+```
+```{r}
+df_unique_head_female <- df_unique_head %>% filter(gender_head==2) %>% filter(gender==2 & family_relation==1)
+
+# Create the plot
+df_unique_head_female_LFP <- df_unique_head_female %>%
+  group_by(year) %>%
+  summarize(avg_active = mean(active)) 
+
+#filter(job_position_head=="employee_private_sector" | job_position_head=="employee_Public_sector" | job_position_head=="employer" | job_position_head=="self_employed")
+
+plot <- ggplot(df_unique_head_female_LFP, aes(x = year, y = avg_active), group=1) +
+  geom_line(group=1) +
+  labs(
+    title = "Females' LFP by spouse's job position ",
+    x = "Year",
+    y = "LFP"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(plot)
+
+# Calculate the frequency and percentage of each job_position by year
+df_percentages <- df_unique_head_female %>%
+  group_by(year, job_position) %>%
+  filter(job_position=="employee_private_sector" | job_position=="employee_Public_sector" | job_position=="employer" | job_position=="self_employed") %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  group_by(year) %>%
+  mutate(total = sum(count),
+         percentage = (count / total) * 100) %>%
+  ungroup() 
+
+plot <- ggplot(df_percentages, aes(x = year, y = percentage, color = job_position, group = job_position)) +
+  geom_line() +
+  labs(
+    title = "Percentage of Different Job Positions by Year",
+    x = "Year",
+    y = "Percentage",
+    color = "Job Position"
+  ) +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+print(plot)
+```
+
+
+
+```{r}
+# Calculate the count of family_relation == 1 for each pkey
+count_family_relation <- df %>%
+  group_by(pkey) %>%
+  summarize(
+    count_family_relation_1 = sum(family_relation == 1), 
+    count_family_relation_3 = sum(family_relation == 3)) %>%
+  ungroup()
+
+# Join the count as a new column to the original dataframe
+df_unique_head <- df %>%
+  left_join(count_family_relation, by = "pkey") 
+
+df_unique_head <- df_unique_head %>%
+  filter(count_family_relation_1==1)
+
+df_unique_head <- df_unique_head %>% filter(gender==2 & family_relation==2 & count_family_relation_3<5)
+
+# Create a temporary dataframe to calculate the minimum age for family_relation == 3
+temp_df <- df_unique_head %>%
+  filter(family_relation == 3, !is.na(age)) %>%
+  group_by(pkey) %>%
+  summarize(age_youngest_child = min(age), .groups = 'drop')
+
+# Join the temporary dataframe with the original dataframe
+df_unique_head <- df_unique_head %>%
+  left_join(temp_df, by = "pkey")
+
+df_unique_head <- df_unique_head %>%
+  mutate(age_youngest_child = case_when(
+    age_youngest_child < 6 ~ "0-5",
+    age_youngest_child >= 6 & age_youngest_child < 13 ~ "6-12",
+    age_youngest_child >=13 & age_youngest_child < 18 ~ "13-18",
+    TRUE ~ "18+"
+  ))
+
+
+
+```
+
+```{r}
+# females started looking for job for the first time and males looking for the second job
+# LFP by province, urban
+# Calculate the desired summary
+df_local_1 <- df %>%
+  filter(urban_rural == 1, gender == 1) %>%
+  group_by(year) %>%
+  summarize(
+    avg_looking_for_second_job = mean(F3_D26==1, na.rm = TRUE)
+  )
+
+df_local_2 <- df %>%
+  filter(urban_rural == 1, gender == 2) %>%
+  group_by(year) %>%
+  summarize(
+    avg_active = mean(active, na.rm = TRUE)* 100,
+    perc_nwork_reason_6 = mean(why_nlook_for_job == 6, na.rm = TRUE) * 100,
+    perc_nwork_reason_7 = mean(why_nlook_for_job == 7, na.rm = TRUE) * 100,
+    perc_nwork_reason_8 = mean(why_nlook_for_job == 8, na.rm = TRUE) * 100,
+    perc_nwork_reason_9 = mean(why_nlook_for_job == 9, na.rm = TRUE) * 100,
+    perc_nwork_reason_10 = mean(why_nlook_for_job == 10, na.rm = TRUE) * 100,
+    perc_nwork_reason_11 = mean(why_nlook_for_job == 11, na.rm = TRUE) * 100,
+    perc_nwork_reason_12 = mean(why_nlook_for_job == 12, na.rm = TRUE) * 100
+  )
+
+# Create the plot
+plot1 <- ggplot() +
+  geom_line(data = df_local_1, aes(x = year, y = avg_active, group = 1, color = "Active")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_6, group = 1, color = "Seasonal Work")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_7, group = 1, color = "Inability to Search for Jobs")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_8, group = 1, color = "Disease, Temporary Disability, Pregnancy")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_9, group = 1, color = "Studying")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_10, group = 1, color = "Family Responsibilities")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_11, group = 1, color = "No Need for Work")) +
+  geom_line(data = df_local_1, aes(x = year, y = perc_nwork_reason_12, group = 1, color = "Other Reasons")) +
+  geom_vline(xintercept = "1392", linetype = "dashed", color = "black") +
+  geom_vline(xintercept = "1397", linetype = "dashed", color = "black") +
+  geom_vline(xintercept = "1399", linetype = "dashed", color = "black") +
+  ggtitle("Women's Activity and Inactivity in Urban Areas") +
+  labs(
+    x = "Year",
+    y = "Percentage",
+    color = "Reason"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# annotate("text", x = "1392", y = Inf, label = "reformist party", vjust = 1.5, color = "black") +
+
+# Print the plot
+print(plot1)
+
+# Loop through each unique province_code and create a line plot
+for (i in unique(df$province_code)) {
+  # Filter the data for the current province_code
+  df_local_3 <- df_local_2 %>%
+    filter(province_code == i)
+  
+  # Create the plot
+  plot2 <- ggplot() +
+    geom_line(data = df_local_3, aes(x = year, y = avg_active, group = 1, color = "Active")) +
+    geom_line(data = df_local_3, aes(x = year, y = perc_nwork_reason_6, group = 1, color = "Seasonal Work")) +
+    geom_line(data = df_local_3, aes(x = year, y = perc_nwork_reason_7, group = 1, color = "Inability to Search for Jobs")) +
+    geom_line(data = df_local_3, aes(x = year, y = perc_nwork_reason_8, group = 1, color = "Disease, Temporary Disability, Pregnancy")) +
+    geom_line(data = df_local_3, aes(x = year, y = perc_nwork_reason_9, group = 1, color = "Studying")) +
+    geom_line(data = df_local_3, aes(x = year, y = perc_nwork_reason_10, group = 1, color = "Family Responsibilities")) +
+    geom_line(data = df_local_3, aes(x = year, y = perc_nwork_reason_11, group = 1, color = "No Need for Work")) +
+    geom_line(data = df_local_3, aes(x = year, y = perc_nwork_reason_12, group = 1, color = "Other Reasons")) +
+    geom_vline(xintercept = "1392", linetype = "dashed", color = "black") +
+    geom_vline(xintercept = "1397", linetype = "dashed", color = "black") +
+    geom_vline(xintercept = "1399", linetype = "dashed", color = "black") +
+    ggtitle(paste("Women's Activity and Inactivity in Urban Areas, province", unique(df_local_3$province_name))) +
+    labs(
+      x = "Year",
+      y = "Percentage",
+      color = "Reason"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  
+  print(plot2)
+}
+```
+# if at least one of F3_D01 to F3_D06 is 1, then employed=1, else employed=0
+df <- df %>%
+  mutate(employed = if_else(F3_D01 == 1 | F3_D02 == 1 | F3_D03 == 1 | F3_D04 == 1 | F3_D05 == 1 | F3_D06 == 1, 1, 0))
+
+df <- df %>%
+  mutate(nwork_reason_family_issues = if_else(why_nlook_for_job == "10", 1, 0))
+
+df <- df %>%
+  mutate(nwork_reason_other = if_else(why_nlook_for_job == "06" | why_nlook_for_job == "07" | why_nlook_for_job == "08" | why_nlook_for_job == "09", 1, 0))
+
+df <- df %>%
+  mutate(last_job_position = case_when(
+    last_job_position_code == "01" ~ "employer",
+    last_job_position_code == "02" ~ "self-employed",
+    last_job_position_code == "03" ~ "unpaid_family_worker",
+    last_job_position_code == "04" ~ "employee_private_sector",
+    last_job_position_code == "05" ~ "employee_public_sector",
+    last_job_position_code == "06" ~ "employee_cooperative_sector",
+    last_job_position_code == "07" ~ "employee_public_sector", # trainee_public_sector
+    last_job_position_code == "08" ~ "employee_public_sector", # Unpaid_trainee_public_sector
+    last_job_position_code == "09" ~ "employee_private_sector", # trainee_private_sector
+    last_job_position_code == "10" ~ "employee_private_sector", # unpaid_trainee_private_sector
+    last_job_position_code == "" ~ "not_employed"
+  ))
+
+# Ensure the 'year' column is character
+df$year <- as.character(df$year)
+
+df <- df %>%
+  mutate(education_level = ifelse(
+    year <= "1396",
+    as.numeric(case_when(
+      education_level == 11 ~ "literacy",
+      education_level == 71 ~ "literacy",
+      education_level == 21 ~ "high_school",
+      education_level == 31 ~ "high_school",
+      education_level == 41 ~ "diploma",
+      education_level == 51 ~ "college",
+      education_level == 52 ~ "college",
+      education_level == 53 ~ "graduate_level",
+      education_level == 61 ~ "graduate_level",
+      TRUE ~ "Other" # Keep the original value if no match
+    )),
+    as.numeric(education_level) # Keep the original value if the year condition is not met
+  ))
+
