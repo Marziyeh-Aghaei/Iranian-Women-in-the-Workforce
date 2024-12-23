@@ -1,0 +1,634 @@
+<<<<<<< HEAD
+---
+title: "regression"
+author: "Marziyeh Aghaei"
+date: "2024-07-22"
+output:
+  html_document: 
+    code_folding: show
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+# packages
+require(tidyverse)
+require(fixest)
+library(stargazer)
+require(haven)
+library(usethis)
+library(dplyr)
+library(foreign)
+library(gridExtra)
+library(ggplot2)
+library(openxlsx)
+library(RODBC)
+library(openxlsx)
+library(gridExtra)
+library(cowplot)
+library(RColorBrewer)
+library(texreg)
+library(scales)
+library(plm)
+library(broom)
+library(kableExtra)
+library(marginaleffects)
+library(modelsummary)
+library(plm)
+library(texreg)
+library(margins)
+
+# clear
+rm(list = ls())
+
+# import data
+# df_ref <- read_dta("C:/lfp/data/intermediate_data/data_cleaned.dta")
+# import data
+df_ref <- read_dta("C:/lfp/data/intermediate_data/data_cleaned.dta")
+
+# set specific data directories
+directory_table <- file.path("C:/lfp/table/")
+directory_plot <- file.path("C:/lfp/plot/")
+```
+```{r}
+df <- df_ref %>% 
+      filter(age>=16 & age<=64, citizenship==1,urban_rural==1) %>% 
+      mutate(education_level=case_when(education_level=="high School"~"high school",
+                                       education_level=="high school"~"high school",
+                                       education_level=="college"~"higher education",
+                                       education_level=="graduate level"~"higher education",
+                                       education_level=="diploma"~"high school",
+                                       education_level=="literacy"~"primary school",
+                                       education_level=="no literacy"~"no literacy",
+                                       TRUE ~ "other")) %>%
+      mutate(wife_education_level=case_when(wife_education_level=="high School"~"high school",
+                                       wife_education_level=="high school"~"high school",
+                                       wife_education_level=="college"~"higher education",
+                                       wife_education_level=="graduate level"~"higher education",
+                                       wife_education_level=="diploma"~"high school",
+                                       wife_education_level=="literacy"~"primary school",
+                                       education_level=="no literacy"~"no literacy",
+                                       TRUE ~ "other")) %>%
+      mutate(husband_education_level=case_when(husband_education_level=="high School"~"high school",
+                                       husband_education_level=="high school"~"high school",
+                                       husband_education_level=="college"~"higher education",
+                                       husband_education_level=="graduate level"~"higher education",
+                                       husband_education_level=="diploma"~"high school",
+                                       husband_education_level=="literacy"~"primary school",
+                                       education_level=="no literacy"~"no literacy",
+                                       TRUE ~ "other")) %>%
+      mutate(mother_work_intensity=wife_lfp_history/(wife_age-16)) %>%
+      mutate(father_work_intensity=husband_lfp_history/(husband_age-16)) %>%
+      mutate(mother_work_intensity_group=case_when(
+        mother_work_intensity==0 ~ "never worked",
+        mother_work_intensity>0 & mother_work_intensity<=0.3 ~ "low",
+        mother_work_intensity>0.3 & mother_work_intensity<=0.6 ~ "medium",
+        mother_work_intensity>0.6 ~ "high"
+      )) %>%
+      mutate(father_work_intensity_group=case_when(
+        father_work_intensity==0 ~ "never worked",
+        father_work_intensity>0 & father_work_intensity<=0.3 ~ "low",
+        father_work_intensity>0.3 & father_work_intensity<=0.6 ~ "medium",
+        father_work_intensity>0.6 ~ "high"
+      )) %>%
+      mutate(migrated = ifelse(F2_D11==4 | F2_D11==5,1,0)) %>% 
+      mutate(F2_D12 = as.numeric(F2_D12)) %>%
+      mutate(why_migrated=case_when(
+      (F2_D12 == 1 | F2_D12 == 2 | F2_D12 == 3) ~ "work",
+      (F2_D12 == 4 | F2_D12 == 5) ~ "education",
+      (F2_D12 == 6 | F2_D12 == 7) ~ "military",
+      F2_D12 == 8 ~ "family",
+      F2_D12 == 9 ~ "other",
+      TRUE ~ NA_character_)) %>%
+      mutate(why_left_job=case_when(F3_D44=="01"~"Low income",
+                                    F3_D44=="02"~"permanent closure of workplace",
+                                    F3_D44=="03"~"seasonal nature of work",
+                                    F3_D44=="04"~"temporary nature of work",
+                                    F3_D44=="05"~"relocation of workplace",
+                                    F3_D44=="06"~"education or training",
+                                    F3_D44=="07"~"dismissal or downsizing",
+                                    F3_D44=="08"~"family issues",
+                                    F3_D44=="09"~"migration",
+                                    F3_D44=="10"~"retirement",
+                                    F3_D44=="11"~"completion of mandatory service",
+                                    F3_D44=="12"~"aging",
+                                    F3_D44=="13"~"illness",
+                                    F3_D44=="14"~"other")) %>%
+      mutate(why_nlook_for_job =case_when(F3_D33=="01"~"waiting to start a new job",
+                                    F3_D33=="02"~"waiting to return to a previous job",
+                                    F3_D33=="03"~"waiting for employer’s response",
+                                    F3_D33=="04"~"waiting for other measures to find a job",
+                                    F3_D33=="05"~"lost hope of finding a job",
+                                    F3_D33=="06"~"waiting for seasonal work",
+                                    F3_D33=="07"~"unaware of job search methods",
+                                    F3_D33=="08"~"phys. disability, temp. illness, pregnancy",
+                                    F3_D33=="09"~"education or training",
+                                    F3_D33=="10"~"personal or family responsibilities",
+                                    F3_D33=="11"~"no need to work",
+                                    F3_D33=="12"~"Other")) %>%
+      mutate(why_not_ready_to_work=case_when(F3_D46==1~"education",
+                                         F3_D46==2~"disability",
+                                         F3_D46==3~"age",
+                                         F3_D46==4~"family issues",
+                                         F3_D46==5~"other")) %>% 
+      mutate(currently_studying=ifelse(F2_D15==1,1,0)) %>%
+ 
+      mutate(previous_province=F2_D13) %>%
+      select(pkey,time,year,,active, NobatAmargiri,wife,husband, wife_lfp_history, husband_lfp_history,
+             mother_work_intensity_group,father_work_intensity_group, wife_education_level,education_level,
+             husband_education_level,age_group,province_name,province_code,mother_work_intensity,
+             father_work_intensity,family_relation,gender,wife,migrated,why_migrated,previous_province,
+             why_left_job, why_nlook_for_job,why_not_ready_to_work,currently_studying,ActivityStatus,age) 
+
+df <- df %>% mutate(previous_province=if_else(previous_province=="",province_code,previous_province))
+
+province_lfp_female <- df_ref %>%
+  filter(year==1387,gender=="Female") %>%
+  group_by(province_code) %>%
+  summarize(previous_province_lfp_female = mean(active, na.rm = TRUE)) %>%
+  mutate(previous_province_lfp_rank = rank(-as.numeric(previous_province_lfp_female), ties.method = "first")) %>% mutate(previous_province_lfp_level_female=case_when(
+    previous_province_lfp_rank<=15 ~ "high",
+    TRUE ~ "low"
+  )) %>% select(province_code,previous_province_lfp_female,previous_province_lfp_level_female) 
+df <- df %>% left_join(province_lfp_female, by = c("previous_province" = "province_code"))
+
+# Create province-level labor force participation levels for males
+#province_lfp_male <- df_ref %>%
+#  filter(year == 1387, gender == "Male") %>%
+#  group_by(province_code) %>%
+#  summarize(previous_province_lfp_male = mean(active, na.rm = TRUE)) %>%
+#  mutate(previous_province_lfp_rank = rank(-as.numeric(previous_province_lfp_male), ties.method = "first")) %>%
+#  mutate(previous_province_lfp_level_male = case_when(
+#    province_lfp_rank <= 15 ~ "high",
+#    TRUE ~ "low"
+#  )) %>%
+#  select(province_code, previous_province_lfp_male,previous_province_lfp_level_male) 
+# Join the male LFP levels to your main dataframe
+# df <- df %>% left_join(province_lfp_male, by = c("previous_province" = "province_code"))
+
+province_lfp_female <- province_lfp_female %>% mutate(current_province_lfp_female=previous_province_lfp_female,current_province_lfp_level_female=previous_province_lfp_level_female) %>% select(province_code,current_province_lfp_female,current_province_lfp_level_female)
+df <- df %>% left_join(province_lfp_female, by = c("province_code"))
+
+```
+```{r}
+# Calculate the share of currently studying for ages 16 to 30 by gender
+study_share_gender <- df %>%
+  filter(age >= 16, age <= 30) %>%  # Filter ages between 16 and 30
+  group_by(age, gender) %>%         # Group by age and gender
+  summarize(
+    share = mean(currently_studying, na.rm = TRUE) * 100  # Share (%) currently studying
+  ) %>%
+  ungroup()
+
+# View the summarized table
+print(study_share_gender)
+
+# Create a plot for the share of individuals currently studying by age and gender
+plot <- ggplot(study_share_gender, aes(x = age, y = share, color = gender, group = gender)) +
+  geom_line(size = 1) +  # Line plot to connect points
+  geom_point(size = 3) +  # Add points for clarity
+  labs(
+    title = "",
+    x = "Age",
+    y = "Share (%)",
+    color = "Gender"
+  ) +
+  scale_color_manual(
+    values = c("Male" = scales::brewer_pal(palette = "Set2")(8)[1],  # Green from Set2
+               "Female" = scales::brewer_pal(palette = "Set2")(8)[2])  # Orange from Set2
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "serif", size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.title.x = element_text( size = 14),
+    axis.title.y = element_text( size = 14),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    legend.title = element_text( size = 15),
+    legend.text = element_text(size = 15),
+    legend.position = "bottom",  # Move the legend to the bottom
+    legend.direction = "horizontal",  # Make the legend horizontal
+    panel.grid.major = element_line(size = 0.1, color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+
+# Display the plot
+print(plot)
+
+# Save the plot
+ggsave(filename = file.path(directory_plot, "share_studying_by_age.png"), plot = plot, width = 10, height = 6, dpi = 300)
+
+```
+# dataset reg mother
+```{r}
+df_reg <- df %>% 
+  #mutate(active=if_else(currently_studying==1 | why_nlook_for_job=="education or training" | why_not_ready_to_work=="education",1,active)) %>%
+  #filter(currently_studying!=1 | why_nlook_for_job!="education or training" | why_not_ready_to_work=="education") %>%
+  filter(education_level!="other" & 
+           wife_education_level!="other" & husband_education_level!="other") %>% 
+  filter(mother_work_intensity!="NA") %>%
+  filter(father_work_intensity!="NA") %>%
+  mutate(mother_work_intensity_binary=if_else(mother_work_intensity>0,1,0)) %>%
+  mutate(father_work_intensity_binary=if_else(father_work_intensity>0,1,0))
+
+df_reg$education_level <- factor(df_reg$education_level, 
+                                 levels = c("no literacy", "primary school", "high school", "higher education"))
+df_reg$wife_education_level <- factor(df_reg$wife_education_level, 
+                                 levels = c("no literacy", "primary school", "high school", "higher education"))
+df_reg$husband_education_level <- factor(df_reg$husband_education_level, 
+                                 levels = c("no literacy", "primary school", "high school", "higher education"))
+
+df_reg$mother_work_intensity_group <- factor(df_reg$mother_work_intensity_group, 
+                                 levels = c("never worked", "low", "medium", "high"))
+df_reg$father_work_intensity_group <- factor(df_reg$father_work_intensity_group, 
+                                 levels = c("never worked", "low", "medium", "high"))
+
+df_reg_female = df_reg %>% filter(family_relation==3 & gender=="Female") %>%
+  mutate(
+    inactive_reason_family = if_else(why_nlook_for_job == "personal or family responsibilities", 1, 0),
+    inactive_reason_family = if_else(active==1, 0, inactive_reason_family)
+  )  %>%
+  mutate(
+    inactive_reason_no_need = if_else(why_nlook_for_job == "no need to work", 1, 0),
+    inactive_reason_no_need = if_else(active==1, 0, inactive_reason_no_need)
+  ) 
+
+df_reg_male = df_reg %>% filter(family_relation==3 & gender=="Male") %>%
+  mutate(
+    inactive_reason_family = if_else(why_nlook_for_job == "personal or family responsibilities", 1, 0),
+    inactive_reason_family = if_else(active==1, 0, inactive_reason_family)
+  )  %>%
+  mutate(
+    inactive_reason_no_need = if_else(why_nlook_for_job == "no need to work", 1, 0),
+    inactive_reason_no_need = if_else(active==1, 0, inactive_reason_no_need)
+  ) 
+
+df_reg_migration <- df_reg %>% filter(family_relation==1 & migrated==1) %>%
+  filter(!is.na(why_migrated)) %>%
+  filter(why_migrated == "family")
+```
+
+### LPM
+```{r}
+# Define the regression models
+model_1_1 <- feols(active ~ mother_work_intensity + wife_education_level | age_group + education_level + province_code + year + NobatAmargiri, data = df_reg_female)
+model_1_2 <- feols(active ~ mother_work_intensity + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level + province_code + year + NobatAmargiri, data = df_reg_female)
+model_1_3 <- feols(active ~ mother_work_intensity + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level + province_code + year + NobatAmargiri, data = df_reg_male)
+
+# Create a LaTeX table with only "Yes" or "No" for controls
+texreg::texreg(
+  list(model_1_1, model_1_2, model_1_3),  # List of models
+  file = file.path(directory_table, "reg1_lpm.tex"),  # Output file path
+  caption = "Regression Results",
+  label = "tab:regression_results",
+  custom.model.names = c("Model 1", "Model 2", "Model 3"),  # Custom model names
+  custom.coef.names = c(
+    "Mother Work Intensity", 
+    "Mother Education Level: primary school",
+    "Mother Education Level: high school", 
+    "Mother Education Level: higher education", 
+    "Father Work Intensity", 
+    "Father Education Level: primary school",
+    "Father Education Level: high school",
+    "Father Education Level: higher education"
+  ),  # Custom coefficient names
+  add.rows = list(
+    c("Age Group Controls", rep("Yes", 3)),
+    c("Education Level Controls", rep("Yes", 3)),
+    c("Province Controls", rep("Yes", 3)),
+    c("Year Controls", rep("Yes", 3)),
+    c("NobatAmargiri Controls", rep("Yes", 3))
+  ),
+  override.summary = list(
+    c("Num. obs.", format(nrow(df_reg_female), big.mark = ",")),  # Replace with appropriate dataset size if differing for male
+    c("Adj. R^2", format(c(summary(model_1_1)$r.squared, summary(model_1_2)$r.squared, summary(model_1_3)$r.squared), digits = 3))
+  ),
+  use.packages = FALSE,  # Ensures compatibility without additional LaTeX package requirements
+  digits = 3  # Number of decimal places for coefficients
+)
+```
+### Logit
+```{r}
+# Define the regression models
+model_1_1 <- feglm(active ~ mother_work_intensity + wife_education_level |  age_group + education_level + province_code + year + NobatAmargiri, data = df_reg_female,family = "binomial")
+model_1_2 <- feglm(active ~ mother_work_intensity  + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level  + province_code + year + NobatAmargiri, data = df_reg_female,family = "binomial")
+model_1_3 <- feglm(active ~ mother_work_intensity  + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level  + province_code + year + NobatAmargiri, data = df_reg_male,family = "binomial")
+
+# Create a LaTeX table with only "Yes" or "No" for controls
+texreg::texreg(
+  list(model_1_1, model_1_2, model_1_3),  # List of models
+  file = file.path(directory_table, "reg1_logit.tex"),  # Output file path
+  caption = "Regression Results",
+  label = "tab:regression_results",
+  custom.model.names = c("Model 1", "Model 2", "Model 3"),  # Custom model names
+  custom.coef.names = c("Mother Work Intensity", 
+  "Mother Education Level: primary school",
+  "Mother Education Level: high school", 
+  "Mother Education Level: higher education", 
+  "Father Work Intensity", 
+  "Father Education Level: primary school",
+  "Father Education Level: high school",
+  "Father Education Level: higher education"),  # Custom coefficient names
+  add.rows = list(
+    c("Age Group Controls", rep("Yes", 3)),
+    c("Education Level Controls", rep("Yes", 3)),
+    c("Province Controls", rep("Yes", 3)),
+    c("Year Controls", rep("Yes", 3)),
+    c("NobatAmargiri Controls", rep("Yes", 3))
+  ),
+  override.summary = list(
+    c("Num. obs.", format(nrow(df_reg), big.mark = ",")),
+    c("Deviance", format(c(model_1_1$deviance, model_1_2$deviance, model_1_3$deviance3), digits = 4)),
+    c("Log Likelihood", format(c(model_1_1$logLik, model_1_2$logLik, model_1_3$logLik3), digits = 4)),
+    c("Pseudo R^2", format(c(model_1_1$pseudoR2, model_1_2$pseudoR2, model_1_3$pseudoR2), digits = 3))
+  ),
+  use.packages = FALSE,  # Ensures compatibility without additional LaTeX package requirements
+  digits = 3  # Number of decimal places for coefficients
+)
+```
+
+# Reg Mother Vars
+```{r}
+# Define the regression models
+model_1_1 <- feols(active ~ mother_work_intensity | age_group + education_level + wife_education_level + 
+                   father_work_intensity + husband_education_level + province_code + year + NobatAmargiri, 
+                   data = df_reg_female)
+
+model_1_2 <- feols(active ~ mother_work_intensity_binary | age_group + education_level + wife_education_level + 
+                   father_work_intensity + husband_education_level + province_code + year + NobatAmargiri, 
+                   data = df_reg_female)
+
+model_1_3 <- feols(active ~ mother_work_intensity_group | age_group + education_level + wife_education_level + 
+                   father_work_intensity + husband_education_level + province_code + year + NobatAmargiri, 
+                   data = df_reg_female)
+
+# Create a LaTeX table with only "Yes" or "No" for controls
+texreg::texreg(
+  list(model_1_1, model_1_2, model_1_3),  # List of models
+  file = file.path(directory_table, "reg2.tex"),  # Output file path
+  caption = "Regression Results",
+  label = "tab:regression_results",
+  custom.model.names = c("Model 1", "Model 2", "Model 3"),  # Custom model names
+  custom.coef.names = c(
+    "Mother Work Intensity", 
+    "Mother Work Intensity: ever worked", 
+    "Mother Work Intensity: Low",
+    "Mother Work Intensity: Medium",
+    "Mother Work Intensity: High"
+  ),  # Custom coefficient names
+  add.rows = list(
+    c("Age Group Controls", rep("Yes", 3)),
+    c("Education Level Controls", rep("Yes", 3)),
+    c("Province Controls", rep("Yes", 3)),
+    c("Year Controls", rep("Yes", 3)),
+    c("NobatAmargiri Controls", rep("Yes", 3))
+  ),
+  override.summary = list(
+    c("Num. obs.", format(c(model_1_1$nobs, model_1_2$nobs, model_1_3$nobs), big.mark = ",")),
+    c("R^2", format(c(model_1_1$r.squared, model_1_2$r.squared, model_1_3$r.squared), digits = 3)),
+    c("Adjusted R^2", format(c(model_1_1$adj.r.squared, model_1_2$adj.r.squared, model_1_3$adj.r.squared), digits = 3)),
+    c("Residual Std. Error", format(c(model_1_1$sigma, model_1_2$sigma, model_1_3$sigma), digits = 3))
+  ),
+  use.packages = FALSE,  # Ensures compatibility without additional LaTeX package requirements
+  digits = 3  # Number of decimal places for coefficients
+)
+```
+
+# Not Work
+### LPM
+```{r}
+# Modify the dataset
+df_reg_female_subset_all <- df_reg_female %>%
+  filter(!is.na(inactive_reason_family))
+
+df_reg_female_subset <- df_reg_female %>%
+  filter(!is.na(inactive_reason_family), age > 26)
+
+df_reg_male_subset <- df_reg_male %>%
+  filter(!is.na(inactive_reason_family), age > 26)
+
+# Define the LPM regression models with clustered standard errors
+model_1_1 <- feols(
+  inactive_reason_family ~ mother_work_intensity + wife_education_level | age_group + education_level + province_code + year + NobatAmargiri,
+  data = df_reg_female_subset_all,
+  cluster = ~pkey  # Cluster by pkey
+)
+
+model_1_2 <- feols(
+  inactive_reason_family ~ mother_work_intensity + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level + province_code + year + NobatAmargiri,
+  data = df_reg_female_subset_all,
+  cluster = ~pkey  # Cluster by pkey
+)
+
+model_1_3 <- feols(
+  inactive_reason_family ~ mother_work_intensity + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level + province_code + year + NobatAmargiri,
+  data = df_reg_female_subset,
+  cluster = ~pkey  # Cluster by pkey
+)
+
+model_1_4 <- feols(
+  inactive_reason_family ~ mother_work_intensity + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level + province_code + year + NobatAmargiri,
+  data = df_reg_male_subset,
+  cluster = ~pkey  # Cluster by pkey
+)
+
+# Define custom coefficient names
+custom_coef_names <- c(
+  "Mother Work Intensity",
+  "Wife Education: Primary School",
+  "Wife Education: High School",
+  "Wife Education: Higher Education",
+  "Father Work Intensity",
+  "Husband Education: Primary School",
+  "Husband Education: High School",
+  "Husband Education: Higher Education"
+)
+
+# Create a LaTeX table using coefficients from all four models
+texreg::texreg(
+  l = list(model_1_1, model_1_2, model_1_3, model_1_4),  # Include all four models
+  file = file.path(directory_table, "reg_lpm_nwork_family_reason.tex"),  # Output file path
+  caption = "Regression Results (Linear Probability Models with Clustered Standard Errors)",
+  label = "tab:regression_results",
+  custom.model.names = c(
+    "Female", 
+    "Female", 
+    "Female (Age >26)", 
+    "Male (Age >26)"
+  ),  # Descriptive model names
+  custom.coef.names = custom_coef_names,  # Custom coefficient names
+  digits = 3,  # Number of decimal places for coefficients
+  stars = c(0.1, 0.05, 0.01),  # Define significance levels
+  add.rows = list(
+    c("Age Group FE", "Yes", "Yes", "Yes", "Yes"),
+    c("Education Level FE", "Yes", "Yes", "Yes", "Yes"),
+    c("Province FE", "Yes", "Yes", "Yes", "Yes"),
+    c("Year FE", "Yes", "Yes", "Yes", "Yes"),
+    c("NobatAmargiri FE", "Yes", "Yes", "Yes", "Yes"),
+    c("Clustering by pkey", "Yes", "Yes", "Yes", "Yes")
+  ),
+  # Optional: Include significance stars in the table
+  # Note: 'use.packages' might be deprecated; remove if errors
+  use.packages = FALSE,
+  reorder.coef = NULL  # Maintain default coefficient ordering
+)
+```
+### robustness
+```{r}
+model_1_5 <- feols(
+  inactive_reason_no_need ~ mother_work_intensity + wife_education_level + father_work_intensity + husband_education_level | age_group + education_level + province_code + year + NobatAmargiri,
+  data = df_reg_female_subset,
+  cluster = ~pkey  # Cluster by pkey
+)
+
+texreg::texreg(
+  list(model_1_5),
+  file = file.path(directory_table, "reg_lpm_nwork_no_need.tex"),
+  caption = "Regression Results (Linear Probability Model for Inactive Reason: No Need)",
+  label = "tab:reg_lpm_no_need_family_reason",
+  custom.model.names = c("robustness"),
+  custom.coef.names = custom_coef_names,
+  digits = 3,
+  stars = c(0.1, 0.05, 0.01),
+  add.rows = list(
+    "Age Group FE" = "Yes",
+    "Education Level FE" = "Yes",
+    "Province FE" = "Yes",
+    "Year FE" = "Yes",
+    "NobatAmargiri FE" = "Yes",
+    "Clustering by pkey" = "Yes"
+  ),
+  custom.note = "Standard errors are clustered at the pkey level. *** p<0.01, ** p<0.05, * p<0.1.",
+  reorder.coef = NULL,
+  include.rsquared = TRUE,       # Include R-squared
+  include.adjrs = TRUE,          # Include Adjusted R-squared
+  include.nobs = TRUE            # Include Number of Observations
+)
+```
+
+```{r}
+# Define the regression models
+model_1_1 <- feols(inactive_reason_family ~ mother_work_intensity | age_group + education_level + wife_education_level + 
+                   father_work_intensity + husband_education_level + province_code + year + NobatAmargiri, 
+                   data = df_reg_female_subset,
+  cluster = ~pkey)
+
+model_1_2 <- feols(inactive_reason_family ~ mother_work_intensity_binary | age_group + education_level + wife_education_level + 
+                   father_work_intensity + husband_education_level + province_code + year + NobatAmargiri, 
+                   data = df_reg_female_subset,
+  cluster = ~pkey)
+
+model_1_3 <- feols(inactive_reason_family ~ mother_work_intensity_group | age_group + education_level + wife_education_level + 
+                   father_work_intensity + husband_education_level + province_code + year + NobatAmargiri, 
+                   data = df_reg_female_subset,
+  cluster = ~pkey)
+
+# Create a LaTeX table with only "Yes" or "No" for controls
+texreg::texreg(
+  list(model_1_1, model_1_2, model_1_3),  # List of models
+  file = file.path(directory_table, "reg2.tex"),  # Output file path
+  caption = "Regression Results",
+  label = "tab:regression_results",
+  custom.model.names = c("Model 1", "Model 2", "Model 3"),  # Custom model names
+  custom.coef.names = c(
+    "Mother Work Intensity", 
+    "Mother Work Intensity: ever worked", 
+    "Mother Work Intensity: Low",
+    "Mother Work Intensity: Medium",
+    "Mother Work Intensity: High"
+  ),  # Custom coefficient names
+  add.rows = list(
+    c("Age Group Controls", rep("Yes", 3)),
+    c("Education Level Controls", rep("Yes", 3)),
+    c("Province Controls", rep("Yes", 3)),
+    c("Year Controls", rep("Yes", 3)),
+    c("NobatAmargiri Controls", rep("Yes", 3))
+  ),
+  override.summary = list(
+    c("Num. obs.", format(c(model_1_1$nobs, model_1_2$nobs, model_1_3$nobs), big.mark = ",")),
+    c("R^2", format(c(model_1_1$r.squared, model_1_2$r.squared, model_1_3$r.squared), digits = 3)),
+    c("Adjusted R^2", format(c(model_1_1$adj.r.squared, model_1_2$adj.r.squared, model_1_3$adj.r.squared), digits = 3)),
+    c("Residual Std. Error", format(c(model_1_1$sigma, model_1_2$sigma, model_1_3$sigma), digits = 3))
+  ),
+  use.packages = FALSE,  # Ensures compatibility without additional LaTeX package requirements
+  digits = 3  # Number of decimal places for coefficients
+)
+```
+
+
+Migration
+# Migration
+```{r}
+df_reg_migration <- df %>% filter(year>1390) %>%
+  filter(education_level!="other" & wife_education_level!="other" & husband_education_level!="other") %>% 
+  filter(family_relation==2 & migrated==1) %>%
+  filter(why_migrated == "family")
+
+df_reg_migration$education_level <- factor(df_reg_migration$education_level, 
+                                 levels = c("no literacy", "primary school", "high school", "higher education"))
+df_reg_migration$wife_education_level <- factor(df_reg_migration$wife_education_level, 
+                                 levels = c("no literacy", "primary school", "high school", "higher education"))
+df_reg_migration$husband_education_level <- factor(df_reg_migration$husband_education_level, 
+                                 levels = c("no literacy", "primary school", "high school", "higher education"))
+
+df_reg_migration$mother_work_intensity_group <- factor(df_reg_migration$mother_work_intensity_group, 
+                                 levels = c("never worked", "low", "medium", "high"))
+df_reg_migration$father_work_intensity_group <- factor(df_reg_migration$father_work_intensity_group, 
+                                 levels = c("never worked", "low", "medium", "high"))
+
+```
+
+```{r}
+
+# Model 2: Second specification with year-province fixed effects
+model_1 <- feols(
+  active ~ previous_province_lfp_female |
+    age_group + education_level + husband_education_level + province_code+year + NobatAmargiri,
+  data = df_reg_migration,cluster = ~pkey
+)
+
+# Model 1: First specification
+model_2 <- feols(
+  active ~ previous_province_lfp_female + current_province_lfp_female |
+    age_group + education_level + husband_education_level + year + NobatAmargiri,
+  data = df_reg_migration,cluster = ~pkey
+)
+
+# Export both models to a LaTeX table
+texreg::texreg(
+  list(model_1, model_2),  # Place model_2 in the first column and model_1 in the second
+  file = file.path(directory_table, "migration_lpm.tex"),  # Output file path
+  caption = "Comparison of Linear Probability Model Specifications",  # Table caption
+  label = "tab:regression_comparison",  # Table label for referencing
+  custom.model.names = c("1", "2"),  # Custom names for models
+  custom.coef.names = c(
+    "Previous Province LFP (Female)", 
+    "Current Province LFP (Female)"
+  ),  # Custom coefficient names
+  add.rows = list(
+    c("Age Group FE", "Yes", "Yes"),
+    c("Education Level FE", "Yes", "Yes"),
+    c("Husband Education Level FE", "Yes", "Yes"),
+    c("Year FE", "No", "Yes"),  # Year FE only in Specification 1
+    c("Province-Year FE", "Yes", "No"),  # Province-year FE only in Specification 2
+    c("Num. Observations", 
+      format(nobs(model_2), big.mark = ","), 
+      format(nobs(model_1), big.mark = ","))
+  ),
+  use.packages = FALSE,  # Minimal LaTeX requirements
+  digits = 3  # Number of decimal places
+)
+
+
+
+```
+
+
+
+
+

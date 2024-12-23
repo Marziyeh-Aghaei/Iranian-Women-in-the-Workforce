@@ -15,6 +15,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
 ```{r,message = FALSE}
 # packages
 require(tidyverse)
@@ -37,7 +38,8 @@ library(RColorBrewer)
 rm(list = ls())
 
 # set general data directory
-directory_data <- "C:/lfp/data/raw_data/"
+directory_data <- "C:/lfp/data/raw_data/LFS"
+directory_data_main <- "C:/lfp/data/raw_data"
 ```
 ```{r}
 # Load Data
@@ -45,10 +47,10 @@ setwd(directory_data)
 
 # create empty dataframes
 df_1384_1386_ref <- data.frame()
-df_1387_1401_ref <- data.frame()
+df_1387_1402_ref <- data.frame()
 
 # Loop through each file, read the data, and assign to a variable
-for (i in 1384:1401) {
+for (i in 1384:1402) {
     file <- paste0("LFS_", i, ".dta")
     data <- read_dta(file)
     data <- data[, order(names(data))]
@@ -61,12 +63,14 @@ for (i in 1384:1401) {
         data <- subset(data, select = -IW15_Yearly)
         names(data)[names(data) == "IW10_Yearly"] <- "IW_Yearly"
       }
-      df_1387_1401_ref <- bind_rows(df_1387_1401_ref, data)
+      df_1387_1402_ref <- bind_rows(df_1387_1402_ref, data)
     }
 }
 
 # remove variable data
 rm(data)
+
+setwd(directory_data_main)
 
 province_list <- read.xlsx("province_names.xlsx")
 
@@ -77,18 +81,135 @@ province_list <- province_list %>%
   )
 
 ```
+
 ```{r}
 # separate pkey column into 4 columns
-df <- df_1387_1401_ref %>%
+df <- df_1387_1402_ref %>%
+  select(-F3_D16SHASLIR,-F3_D16SHASLIS,-F3_D16SHHAMRO,-F3_D16SHHAMSA,-F3_D18CHARSHA,-F3_D18DOSHANB,-F3_D18JAM,
+         -F3_D18JOMEH,-F3_D18PANSHAN,-F3_D18SESHANB,-F3_D18YEKSHAN,-F3_D18SHANBEH) %>%
   mutate(pkey_copy = pkey) %>%  # Copy the original pkey column
   separate(pkey_copy, into = c("year", "province_code", "urban_rural", "sample_number", "family_number"), sep = c(2, 4, 5, 8)) %>%
   left_join(province_list, by = "province_code")
 
 df <- df[order(df$pkey), ]
 
-write_dta(df, path = "C:/lfp/data/intermediate_data/data_cleaned.dta")
+df1 <- df %>%
+  mutate(year = ifelse(as.integer(year) >= 87, paste0("13", year), paste0("14", year))) %>%
+  mutate(time = paste(year, "-", NobatAmargiri)) %>%
+  rename(
+    gender = F2_D04,
+    age = F2_D07,
+    citizenship = F2_D08,
+    education = F2_D17,
+    family_relation = F2_D03,
+  ) %>% 
+  mutate(gender=if_else(gender==1,"Male","Female")) %>%
+  # filter(age>=16 & age<=64, citizenship==1,urban_rural==1) %>%
+  mutate(active = if_else(ActivityStatus == 1 | ActivityStatus == 2 , 1, 0)) %>%
+  mutate(age_group = case_when(
+    age >= 16 & age < 24 ~ "16-23",
+    age >= 24 & age < 32 ~ "24-31",
+    age >= 32 & age < 40 ~ "32-39",
+    age >= 40 & age < 48 ~ "40-47",
+    age >= 48 & age < 56 ~ "48-55",
+    TRUE ~ "56+"
+  )) %>%
+  mutate(education_level = case_when(
+      education == 11 ~ "literacy",
+      education == 71 ~ "literacy",
+      education == 21 ~ "high school",
+      education == 31 ~ "high school",
+      education == 41 ~ "diploma",
+      education == 51 ~ "college",
+      education == 52 ~ "college",
+      education == 53 ~ "graduate level",
+      education == 61 ~ "graduate level",
+      education == 1 ~ "literacy",
+      education == 2 ~ "high School",
+      education == 3 ~ "high School",
+      education == 4 ~ "diploma",
+      education == 5 ~ "college",
+      education == 6 ~ "college",
+      education == 7 ~ "graduate level",
+      education == 8 ~ "graduate level",
+      # education_level == 9 ~ "other"
+      TRUE ~ "other" # Keep the original value if no match
+  ))  %>%
+  mutate(education_level=if_else(F2_D16==2,"no literacy",education_level)) %>%
+  mutate(
+    F3_D15SAL = as.numeric(F3_D15SAL, na.rm = TRUE),
+    F3_D37SAL = as.numeric(F3_D37SAL, na.rm = TRUE)
+  ) %>%
+  mutate(F3_D36_modified=if_else(F3_D36 != 1 | F3_D36 != 4, 0, NA_real_)) %>%
+  mutate(employment_history = as.numeric(pmax(F3_D15SAL, F3_D37SAL, F3_D36_modified, na.rm = TRUE))) %>%
+   # Define wife and husband and filter early
+  mutate(
+    wife = if_else(family_relation %in% c(1, 2) & gender == "Female", 1, 0),
+    husband = if_else(family_relation %in% c(1, 2) & gender == "Male", 1, 0)
+  ) 
+```
+```{r}
+df2 <- df1 %>%
+  # Create wife and husband history/education columns
+  mutate(
+    wife_lfp_history = if_else(wife == 1, employment_history, NA_real_),
+    wife_education_level = if_else(wife == 1, education_level, NA_character_),
+    husband_lfp_history = if_else(husband == 1, employment_history, NA_real_),
+    husband_education_level = if_else(husband == 1, education_level, NA_character_)
+  ) %>%
+  # Group by pkey and summarize max values to avoid repetitive mutate calls
+  group_by(pkey) %>%
+  summarize(
+    wife_lfp_history = max(wife_lfp_history, na.rm = TRUE),
+    husband_lfp_history = max(husband_lfp_history, na.rm = TRUE),
+    wife_education_level = max(wife_education_level, na.rm = TRUE),
+    husband_education_level = max(husband_education_level, na.rm = TRUE)
+  ) %>% ungroup()
+```
+```{r}
+# import data
+df_ref <- read_dta("C:/lfp/data/intermediate_data/data_cleaned.dta")
+```
+```{r}
+df_age_parents <- df_ref %>%
+  # Create wife and husband history/education columns
+  mutate(age=as.numeric(age)) %>%
+  mutate(
+    wife_age = if_else(wife == 1, age, NA_real_),
+    husband_age = if_else(husband == 1, age, NA_real_),
+  ) %>%
+  # Group by pkey and summarize max values to avoid repetitive mutate calls
+  group_by(pkey) %>%
+  summarize(
+    wife_age = max(wife_age, na.rm = TRUE),
+    husband_age = max(husband_age, na.rm = TRUE),
+  ) %>% ungroup()
 ```
 
+```{r}
+# df_final <- df1 %>%
+  # left_join(df2, by = "pkey") %>% left_join(df_age_parents, by = "pkey") 
+```
+```{r}
+df_final <- df_ref %>%
+  left_join(df_age_parents, by = "pkey") 
+```
+
+```{r}
+write_dta(df_final, path = "C:/lfp/data/intermediate_data/data_cleaned.dta")
+```
+      #mutate(wife_lfp_history_group = case_when(
+      #wife_lfp_history > 0 & wife_lfp_history < 5 ~ "Less than 5 years",
+      #wife_lfp_history >= 5 & wife_lfp_history < 10 ~ "5-10 years",
+      #wife_lfp_history >= 10 & wife_lfp_history < 20 ~ "10-20 years",
+      #wife_lfp_history >= 20 ~ "20+ years",
+      #TRUE ~ "Never worked")) %>%
+      #mutate(husband_lfp_history_group = case_when(
+      #husband_lfp_history > 0 & husband_lfp_history < 5 ~ "Less than 5 years",
+      #husband_lfp_history >= 5 & husband_lfp_history < 10 ~ "5-10 years",
+      #husband_lfp_history >= 10 & husband_lfp_history < 20 ~ "10-20 years",
+      #husband_lfp_history >= 20 ~ "20+ years",
+      #TRUE ~ "Never worked")) %>%
 
 
 
